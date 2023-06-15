@@ -61,6 +61,9 @@ def compute_alignment(model_a_num, points3D_a, model_b_num, points3D_b, point3D_
 
     print(f"Models have {len(relevant_pairs)} shared points.")
 
+    if(len(relevant_pairs) < 3):
+        return -1, 0, 0
+
     pc_a = np.asarray(xyz_a_list)
     pc_b = np.asarray(xyz_b_list)
 
@@ -78,7 +81,7 @@ def compute_alignment(model_a_num, points3D_a, model_b_num, points3D_b, point3D_
 
 parser = argparse.ArgumentParser(description='construct indexes for comparing extended model to reference models.')
 parser.add_argument('category_index')
-parser.add_argument('reference_model_index')
+# parser.add_argument('reference_model_index')
 args = parser.parse_args()
 
 reference_path_base = f"reference_models/cathedrals/{args.category_index}"
@@ -93,6 +96,12 @@ for i in range(len(list_subfolders_with_paths)):
     ref_models.append((i, ref_cameras, ref_images, ref_points3D))
 print("Done.")
 
+print(f"Importing base model...")
+base_model_path = f"base_models/cathedrals/{args.category_index}/sparse/0"
+base_cameras, base_images, base_points3D = read_model(base_model_path, ext='.bin')
+print(f"Done - {len(base_images)} images  ,  {len(base_points3D)} points")
+
+
 print(f"Importing extended model...")
 extended_model_path = f"extended_models/cathedrals/{args.category_index}/sparse/0"
 ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
@@ -104,7 +113,7 @@ with open(point3d_groups_path, "r") as infile:
     point_groups = [l.split(",") for l in infile.read().splitlines()]
     print(f"Read points3D groups from {point3d_groups_path}")
 
-point3d_groups_path_a = f"{reference_path_base}/points3d_groups_aaa.json"
+point3d_groups_path_a = f"{reference_path_base}/points3d_groups_refonly.json"
 with open(point3d_groups_path_a, "r") as infile:
     point_groups_without_ext = [l.split(",") for l in infile.read().splitlines()]
     print(f"Read points3D groups from {point3d_groups_path_a}")
@@ -114,39 +123,48 @@ with open(point3d_groups_path_a, "r") as infile:
 def align_models(base_model_num, points3D_base_model, add_model_num, points3D_add_model, point3D_groups):
     c, R, t = compute_alignment(base_model_num, points3D_base_model, add_model_num, points3D_add_model, point3D_groups)
     
+    if c < 0:
+        return {}
+
     for p3d in points3D_add_model:
         new_xyz = points3D_add_model[p3d].xyz.dot(c * R) + t
         points3D_add_model[p3d] = points3D_add_model[p3d]._replace(xyz=new_xyz, rgb=np.array([255, 0, 0]))
-        # points3D_add_model[p3d] = points3D_add_model[p3d]._replace(rgb=np.array([255, 0, 0]))
 
-    # for p3d in points3D_add_model:
-    #     print(type(points3D_add_model[p3d]))
-    #     print(points3D_add_model[p3d])
-    #     break
+    return points3D_add_model
+    # model = Model()
+    # model.create_window()
 
-    model = Model()
-    model.create_window()
+    # model.points3D = points3D_base_model
+    # model.add_points()
 
-    model.points3D = points3D_base_model
-    model.add_points()
+    # model.points3D = points3D_add_model
+    # model.add_points()
 
-    model.points3D = points3D_add_model
-    model.add_points()
-
-    model.show()
+    # model.show()
 
 # Testing
 
-ref_model_index = int(args.reference_model_index)
-ref_points3D = ref_models[ref_model_index][3]
-align_models(-1, ext_points3D, ref_model_index, ref_points3D, point_groups)
-align_models(0, ref_models[0][3], ref_model_index, ref_points3D, point_groups_without_ext)
+# ref_model_index = int(args.reference_model_index)
+# ref_points3D = ref_models[ref_model_index][3]
+# align_models(-1, ext_points3D, ref_model_index, ref_points3D, point_groups)
+# align_models(0, ref_models[0][3], ref_model_index, ref_points3D, point_groups_without_ext)
 
+# align_models(-1, ext_points3D, -2, base_points3D, point_groups_without_ext)
 
+model = Model()
+model.create_window()
+# model.points3D = ref_models[0][3]
+model.points3D = ext_points3D
+model.add_points()
 
+for i in range(0, len(ref_models)-1):
+    ref_points3D = ref_models[i][3]
+    # aligned_model = align_models(0, ref_models[0][3], i, ref_points3D, point_groups_without_ext)
+    aligned_model = align_models(-1, ext_points3D, i, ref_points3D, point_groups)
+    model.points3D = aligned_model
+    model.add_points()
 
-
-
+model.show()
 exit()
 
 np.set_printoptions(precision=3)

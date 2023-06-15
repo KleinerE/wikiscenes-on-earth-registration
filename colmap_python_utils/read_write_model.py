@@ -197,7 +197,7 @@ def read_images_text(path):
         void Reconstruction::WriteImagesText(const std::string& path)
     """
     images = {}
-    with open(path, "r") as fid:
+    with open(path, "r", encoding='utf-8') as fid:
         while True:
             line = fid.readline()
             if not line:
@@ -493,23 +493,7 @@ def main():
     print("num_cameras:", len(cameras))
     print("num_images:", len(images))
     print("num_points3D:", len(points3D))
-
-    pt_coords = np.zeros((3, len(points3D)))
-    i = 0
-    for point in points3D:
-        pt_coords[:, i] = points3D[point].xyz
-        i += 1
-    print(f"x: [{pt_coords[0,:].min()}, {pt_coords[0,:].max()}]")
-    print(f"y: [{pt_coords[1,:].min()}, {pt_coords[1,:].max()}]")
-    print(f"z: [{pt_coords[2,:].min()}, {pt_coords[2,:].max()}]")
-
-    # print(points3D[380164])
-    # print(points3D[281743])
-    # for point in points3D:
-    #     print(point)
-
-    # print(len(images[74].xys))
-
+    
     if args.output_model is not None:
         write_model(cameras, images, points3D, path=args.output_model, ext=args.output_format)
 
