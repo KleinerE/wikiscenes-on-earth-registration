@@ -24,19 +24,19 @@ def euler2quat(euler): # roll (x), pitch (Y), yaw (z)
 
 
 images = {}
-N = 10
-id_start = 10
-noise_strength = 0.1
+N = 3
+id_start = 3
+noise_strength = 0.01
 include_noise = True
 for i in range(0, N):
     noise = include_noise * np.random.normal(0, noise_strength) # * np.ones(3)
     
-    angle = np.pi * i / N # * np.ones(3)
+    angle = np.pi * i / N + 0.1 # * np.ones(3)
     # qvec = euler2quat(np.array([0, angle + noise, 0]))
     qvec = euler2quat(np.array([angle + noise, 0, 0]))
     
-    # tvec = np.array([0, i + noise, 0])
-    tvec = np.array([i + noise, 0, 0])
+    tvec = np.array([0, i + noise, 0])
+    # tvec = np.array([i + noise, 0, 0])
     # tvec = np.zeros(3)
 
     # print(f"i = {i}:")

@@ -89,7 +89,12 @@ def clamp_angle(a):
         a += 2 * np.pi
     return a
 
+def geodesic_error(R1, R2):
+    return np.arccos(0.5 * (np.trace(R1.T @ R2) - 1))
+
 err_angles = []
+err_angles_w_images = []
+image_errs = {}
 
 for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
     # extract qvecs
@@ -100,26 +105,50 @@ for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
     ref_img_0_qvec = ref_images[ref_img_id_0].qvec
     ref_img_1_qvec = ref_images[ref_img_id_1].qvec
 
-    # Compute the angle between image 0 to image 1, in extended model.
-    delta_R_ext = quaternion_multiply(ext_img_1_qvec, qvec_inverse(ext_img_0_qvec))
-    angle_ext = clamp_angle(quaternion_angle(delta_R_ext))
-    # Compute the angle between image 0 to image 1, in reference model.
-    delta_R_ref = quaternion_multiply(ref_img_1_qvec, qvec_inverse(ref_img_0_qvec))
-    angle_ref = clamp_angle(quaternion_angle(delta_R_ref))
-    # add the angle error to our list.
-    err_angles.append(angle_ext - angle_ref)
+    # Compute the rotation from image 0 to image 1, in extended model.
+    delta_R_ext = qvec2rotmat(ext_img_1_qvec) @ np.linalg.inv(qvec2rotmat(ext_img_0_qvec))
+    # Compute the angle between image 0 to image 1, in reference model. (not sure if needed)
+    delta_R_ref = qvec2rotmat(ref_img_1_qvec) @ np.linalg.inv(qvec2rotmat(ref_img_0_qvec))
+
+    # for image 0, compute the rotation from extension space to reference space.
+    R_ext_to_ref_0 = qvec2rotmat(ref_img_0_qvec) @ np.linalg.inv(qvec2rotmat(ext_img_0_qvec))
+    # Apply this rotation to the extension image 1 to obtain the hypothesized reference image 1 orientation.
+    ref_1_eval = delta_R_ext @ R_ext_to_ref_0 @ qvec2rotmat(ext_img_0_qvec)
+
+    # error = geodesic_error(delta_R_ext, delta_R_ref)
+    # The error is the geodesic distance between this hypothesis and 'ground truth' (the actual reference image 1 orientation)
+    error = geodesic_error(qvec2rotmat(ref_img_1_qvec), ref_1_eval)
+
+    err_angles.append(error)
+    err_angles_w_images.append((ext_images[ext_img_id_0].name, ext_images[ext_img_id_1].name, error))
+    if ext_images[ext_img_id_0].name not in image_errs:
+        image_errs[ext_images[ext_img_id_0].name] = []
+    image_errs[ext_images[ext_img_id_0].name].append(error)
+    if ext_images[ext_img_id_1].name not in image_errs:
+        image_errs[ext_images[ext_img_id_1].name] = []
+    image_errs[ext_images[ext_img_id_1].name].append(error)
+    # err_angles.append(angle_ext - angle_ref)
 
 
-print(f"number of pairs: {len(err_angles)}")
-print(f"min angle error: {min(err_angles)}")
-print(f"max angle error: {max(err_angles)}")
-print(f"avg angle error: {mean(err_angles)}")
-print(f"median angle error: {median(err_angles)}")
-print(f"mode angle error: {mode(err_angles)}")
+# print(f"number of pairs: {len(err_angles)}")
+# print(f"min angle error: {min(err_angles)}")
+# print(f"max angle error: {max(err_angles)}")
+# print(f"avg angle error: {mean(err_angles)}")
+# print(f"median angle error: {median(err_angles)}")
+# print(f"mode angle error: {mode(err_angles)}")
+image_errs_avg = {}
+for k, v in image_errs.items():
+    image_errs_avg[k] = median(v)
 
+image_errs_avg_sorted = dict(sorted(image_errs_avg.items(), key=lambda item: item[1]))
 
+with open("test.txt", 'w') as f:
+    f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in err_angles_w_images))
 
+with open("test1.json", 'w') as f:
+    f.write(json.dumps(image_errs_avg_sorted, indent=2))
 
+print(mean(image_errs_avg.values()))
 
 # Relevant links:
 #   - http://stackoverflow.com/a/32244818/263061 (solution with scale)
