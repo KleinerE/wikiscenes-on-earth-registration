@@ -25,20 +25,6 @@ extended_model_path = f"extended_models/cathedrals/{args.category_index}/sparse/
 ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
 print(f"Done - {len(ext_images)} images  ,  {len(ext_points3D)} points")
 
-# for p3d in ext_points3D:
-#     # new_xyz = ext_points3D[p3d].xyz+0.5
-#     ext_points3D[p3d] = ext_points3D[p3d]._replace(rgb=np.array([255, 0, 0]))
-
-# model = Model()
-# model.create_window()
-# model.points3D = base_points3D
-# model.add_points()
-# model.points3D = ext_points3D
-# model.add_points()
-
-# model.show()
-# exit()
-
 def remove_outlier_points3D(base_points3D, ext_points3D):
     base_points_mat = np.zeros((len(base_points3D), 3))
     i = 0
