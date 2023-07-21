@@ -1,10 +1,12 @@
+import os
 import argparse
 import numpy as np
 import json
 import itertools
-from colmap_python_utils.read_write_model import read_model, Image, qvec2rotmat, rotmat2qvec, read_images_binary
 from tqdm import tqdm
 from statistics import mean, median, mode, stdev
+from colmap_python_utils.read_write_model import read_model, Image, qvec2rotmat, rotmat2qvec, read_images_binary
+from output_model_score_html import ScoresheetData, create_scoresheet
 
 parser = argparse.ArgumentParser(description='construct indexes for comparing extended model to reference models.')
 parser.add_argument('category_index')
@@ -13,6 +15,8 @@ args = parser.parse_args()
 
 print(f"Importing extended model...")
 extended_model_path = f"extended_models/cathedrals/{args.category_index}/sparse/0"
+extended_images_path = f"extended_models/cathedrals/{args.category_index}/images/"
+extended_images_path_absolute = os.path.abspath(extended_images_path)
 ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
 with open(f"extended_models/cathedrals/{args.category_index}/images_new_names.json", 'r') as imgnamesfile:
     ext_img_orig_names = json.load(imgnamesfile)
@@ -150,6 +154,30 @@ with open("test1.json", 'w') as f:
 
 print(mean(image_errs_avg.values()))
 
+image_pairs_sorted = sorted(err_angles_w_images, key=lambda item: item[2])
+with open("test_sorted.txt", 'w') as f:
+    f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in image_pairs_sorted))
+
+# Create data for scoresheet
+s = ScoresheetData()
+s = s._replace(orientation_score = mean(image_errs_avg.values()))
+
+s = s._replace(ornt_img_low_0_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[0][0]))
+s = s._replace(ornt_img_low_0_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[0][1]))
+s = s._replace(ornt_img_low_1_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[1][0]))
+s = s._replace(ornt_img_low_1_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[1][1]))
+s = s._replace(ornt_img_low_2_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[2][0]))
+s = s._replace(ornt_img_low_2_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[2][1]))
+
+s = s._replace(ornt_img_high_0_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-1][0]))
+s = s._replace(ornt_img_high_0_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-1][1]))
+s = s._replace(ornt_img_high_1_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-2][0]))
+s = s._replace(ornt_img_high_1_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-2][1]))
+s = s._replace(ornt_img_high_2_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-3][0]))
+s = s._replace(ornt_img_high_2_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-3][1]))
+
+create_scoresheet(s, extended_model_path)
+
 # Relevant links:
 #   - http://stackoverflow.com/a/32244818/263061 (solution with scale)
 #   - "Least-Squares Rigid Motion Using SVD" (no scale but easy proofs and explains how weights could be added)
@@ -222,6 +250,9 @@ import matplotlib.pyplot as plt
 # sns.kdeplot(np.array(err_angles), bw_adjust=0.05)
 sns.displot(np.array(err_angles))
 plt.show()
+
+
+
 
 exit()
 
