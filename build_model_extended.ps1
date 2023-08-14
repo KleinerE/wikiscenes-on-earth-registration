@@ -39,7 +39,8 @@ Start-Process -FilePath $colmap -argumentList $arguments -NoNewWindow -Wait -Red
 "Done."
 
 "Matching features..."
-$arguments = 'exhaustive_matcher', "--database_path $extended_database_path", '--SiftMatching.min_num_inliers 5'#, --SiftMatching.guided_matching 1'
+# $arguments = 'exhaustive_matcher', "--database_path $extended_database_path", '--SiftMatching.min_num_inliers 5'#, --SiftMatching.guided_matching 1'
+$arguments = 'vocab_tree_matcher', "--database_path $extended_database_path", '--SiftMatching.min_num_inliers 5', "--VocabTreeMatching.vocab_tree_path $base_root_path\vocab_tree_flickr100K_words32K.bin"
 Start-Process -FilePath $colmap -argumentList $arguments -NoNewWindow -Wait -RedirectStandardOutput $log_path -RedirectStandardError $log_error_path
 "Done."
 
