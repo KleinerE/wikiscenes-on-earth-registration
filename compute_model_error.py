@@ -6,6 +6,8 @@ import itertools
 from tqdm import tqdm
 from statistics import mean, median, mode, stdev
 from colmap_python_utils.read_write_model import read_model, Image, qvec2rotmat, rotmat2qvec, read_images_binary
+from colmap_python_utils.visualize_model import draw_camera
+import open3d
 from output_model_score_html import ScoresheetData, create_scoresheet
 
 parser = argparse.ArgumentParser(description='construct indexes for comparing extended model to reference models.')
@@ -14,11 +16,11 @@ parser.add_argument('component_index')
 args = parser.parse_args()
 
 print(f"Importing extended model...")
-extended_model_path = f"extended_models/cathedrals/{args.category_index}/sparse/0"
-extended_images_path = f"extended_models/cathedrals/{args.category_index}/images/"
+extended_model_path = f"extended_models/cathedrals/{args.category_index}_new/sparse/0"
+extended_images_path = f"extended_models/cathedrals/{args.category_index}_new/images/"
 extended_images_path_absolute = os.path.abspath(extended_images_path)
 ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
-with open(f"extended_models/cathedrals/{args.category_index}/images_new_names.json", 'r') as imgnamesfile:
+with open(f"extended_models/cathedrals/{args.category_index}_new/images_new_names.json", 'r') as imgnamesfile:
     ext_img_orig_names = json.load(imgnamesfile)
 print(f"Done - {len(ext_images)} images  ,  {len(ext_points3D)} points")
 
@@ -26,9 +28,6 @@ print(f"Importing reference model...")
 reference_model_path = f"WikiScenes3D/{args.category_index}/{args.component_index}"
 ref_cameras, ref_images, ref_points3D = read_model(reference_model_path, ext='.txt')
 print(f"Done - {len(ref_images)} images  ,  {len(ref_points3D)} points")
-
-# ext_images = read_images_binary(f"toy_models/images_0.bin")
-# ref_images = read_images_binary(f"toy_models/images_1.bin")
 
 # Find image pairs
 image_id_pairs = {}
@@ -55,7 +54,6 @@ print("\n Computing image orientation error")
 ext_img_id_pairs = list(itertools.combinations(image_id_pairs.keys(), 2))
 ref_img_id_pairs = list(itertools.combinations(image_id_pairs.values(), 2))
 
-# print(ext_img_id_pairs)
 def qvec_conjugate(qvec):
     return np.array([qvec[0], -1 * qvec[1], -1 * qvec[2], -1 * qvec[3]])
 
@@ -124,7 +122,8 @@ for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
     error = geodesic_error(qvec2rotmat(ref_img_1_qvec), ref_1_eval)
 
     err_angles.append(error)
-    err_angles_w_images.append((ext_images[ext_img_id_0].name, ext_images[ext_img_id_1].name, error))
+    # err_angles_w_images.append((ext_images[ext_img_id_0].name, ext_images[ext_img_id_1].name, error))
+    err_angles_w_images.append((ext_img_id_0, ext_img_id_1, error))
     if ext_images[ext_img_id_0].name not in image_errs:
         image_errs[ext_images[ext_img_id_0].name] = []
     image_errs[ext_images[ext_img_id_0].name].append(error)
@@ -146,18 +145,93 @@ for k, v in image_errs.items():
 
 image_errs_avg_sorted = dict(sorted(image_errs_avg.items(), key=lambda item: item[1]))
 
-with open("test.txt", 'w') as f:
-    f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in err_angles_w_images))
+# with open("test.txt", 'w') as f:
+#     f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in err_angles_w_images))
 
-with open("test1.json", 'w') as f:
-    f.write(json.dumps(image_errs_avg_sorted, indent=2))
+# with open("test1.json", 'w') as f:
+#     f.write(json.dumps(image_errs_avg_sorted, indent=2))
 
-print(mean(image_errs_avg.values()))
+print(f"orientation score: {mean(image_errs_avg.values())}")
 
 image_pairs_sorted = sorted(err_angles_w_images, key=lambda item: item[2])
-with open("test_sorted.txt", 'w') as f:
-    f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in image_pairs_sorted))
+# with open("test_sorted.txt", 'w') as f:
+#     f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in image_pairs_sorted))
 
+
+frames = []
+def add_image(img, cameras, color=[0.8, 0.2, 0.8], scale=1):
+    # rotation
+    R = qvec2rotmat(img.qvec)
+    # translation
+    t = img.tvec
+    # invert
+    t = -R.T @ t
+    R = R.T
+
+    # intrinsics
+    cam = cameras[img.camera_id]
+
+    if cam.model in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL"):
+        fx = fy = cam.params[0]
+        cx = cam.params[1]
+        cy = cam.params[2]
+    elif cam.model in ("PINHOLE", "OPENCV", "OPENCV_FISHEYE", "FULL_OPENCV"):
+        fx = cam.params[0]
+        fy = cam.params[1]
+        cx = cam.params[2]
+        cy = cam.params[3]
+    else:
+        raise Exception("Camera model not supported")
+
+    # intrinsics
+    K = np.identity(3)
+    K[0, 0] = fx
+    K[1, 1] = fy
+    K[0, 2] = cx
+    K[1, 2] = cy
+
+    # create axis, plane and pyramed geometries that will be drawn
+    cam_model = draw_camera(K, R, t, cam.width, cam.height, scale, color)    
+    frames.extend(cam_model)
+
+def add_points(points3D, min_track_len=3, remove_statistical_outlier=True):
+    pcd = open3d.geometry.PointCloud()
+
+    xyz = []
+    rgb = []
+    for point3D in points3D.values():
+        track_len = len(point3D.point2D_idxs)
+        if track_len < min_track_len:
+            continue
+        xyz.append(point3D.xyz)
+        rgb.append(point3D.rgb / 255)
+
+    pcd.points = open3d.utility.Vector3dVector(xyz)
+    pcd.colors = open3d.utility.Vector3dVector(rgb)
+
+    # remove obvious outliers
+    if remove_statistical_outlier:
+        [pcd, _] = pcd.remove_statistical_outlier(nb_neighbors=20,
+                                                    std_ratio=2.0)
+
+    return pcd
+    # __vis.add_geometry(pcd, False)
+    # __vis.poll_events()
+    # __vis.update_renderer()
+
+
+frames.append(add_points(ext_points3D))
+add_image(ext_images[image_pairs_sorted[0][0]], ext_cameras, [1, 0.9, 0])
+add_image(ext_images[image_pairs_sorted[0][1]], ext_cameras, [0.6, 0.6, 0.2])
+
+open3d.visualization.draw_geometries(frames,
+                                    zoom=0.05,
+                                    front=[0, -1, 0], # unit vector -> the direction of camera 'front'.
+                                    lookat=[0, 0, 0], # vector -> the point in world to look at. affects the position of the camera.
+                                    up=[0, 0, 1]) # unit vector -> the direciton of camera 'up'.
+
+
+exit()
 # Create data for scoresheet
 s = ScoresheetData()
 s = s._replace(orientation_score = mean(image_errs_avg.values()))
@@ -253,140 +327,46 @@ plt.show()
 
 
 
-
-exit()
-
-
+# for i in frames:
+    # __vis.add_geometry(i, False)
 
 
+# open3d.visualization.draw_geometries(frames,
+#                                     zoom=0.03,
+#                                     front=[10, -10, 10],
+#                                     # lookat=[-0.41566, 0.0339, 1.95306],
+#                                     lookat=[0, 0, 0],
+#                                     up=[0, -1, 0])
 
 
-for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
-    # extract qvecs
-    ext_img_0_qvec = ext_images[ext_img_id_0].qvec
-    ext_img_1_qvec = ext_images[ext_img_id_1].qvec
-    ref_img_id_0 = image_id_pairs[ext_img_id_0]
-    ref_img_id_1 = image_id_pairs[ext_img_id_1]
-    ref_img_0_qvec = ref_images[ref_img_id_0].qvec
-    ref_img_1_qvec = ref_images[ref_img_id_1].qvec
+# __vis.poll_events()
+# __vis.update_renderer()
 
-    # Compute the delta rotation from image 0 to image 1, in extended model.
-    delta_R_ext = quaternion_multiply(ext_img_1_qvec, qvec_inverse(ext_img_0_qvec))
-    # Apply the same rotation to image 0 from reference model.
-    ref_0_proj_qvec = quaternion_multiply(delta_R_ext , ref_img_0_qvec)
-    # Compute the rotation error between this projection and the actual reference image 1 orientation.
-    ref_rotation_err = quaternion_multiply(ref_img_1_qvec, qvec_inverse(ref_0_proj_qvec))
-
-    w = ref_rotation_err[0]
-    if w >= 1:
-        w -= np.finfo(float).eps
-    elif w <= -1:
-        w += np.finfo(float).eps
-    
-    err_angle = 2 * np.arccos(w)
-    # if np.isnan(err_angle):
-    #     print(ref_rotation_err)
-    #     print(w)
-    err_angles.append(err_angle)
+# __vis.run()
+# __vis.destroy_window()
 
 
+# # # Create a renderer with the desired image size
+# img_width = 640
+# img_height = 480
+# render = open3d.visualization.rendering.OffscreenRenderer(img_width, img_height)
+# exit()
 
+# __vis = open3d.visualization.Visualizer()
+# __vis.create_window()
 
+# print(__vis.get_view_control().convert_to_pinhole_camera_parameters().extrinsic)
+# ctr = __vis.get_view_control()
+# #This line will obtain the default camera parameters .
+# camera_params = ctr.convert_to_pinhole_camera_parameters() 
+# extrinsic_mat = np.eye(4)
+# extrinsic_mat[0][0] = -1
+# extrinsic_mat[2][2] = -1
+# extrinsic_mat[0][3] = 1000
+# camera_params.extrinsic = extrinsic_mat
+# # leaving camera intrinsics untouched
+# ctr.convert_from_pinhole_camera_parameters(camera_params)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# print((ext_images[1531].qvec2rotmat()))
-avg_angle_errors = []
-
-for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
-    ext_img_0_qvec = ext_images[ext_img_id_0].qvec
-    ext_img_1_qvec = ext_images[ext_img_id_1].qvec
-    ref_img_id_0 = image_id_pairs[ext_img_id_0]
-    ref_img_id_1 = image_id_pairs[ext_img_id_1]
-    ref_img_0_qvec = ref_images[ref_img_id_0].qvec
-    ref_img_1_qvec = ref_images[ref_img_id_1].qvec
-
-    # Compute the delta rotation from image 0 to image 1, in extended moel and in reference model.
-    # delta_R_ext = ext_img_1_qvec.reshape(-1,1).dot(qvec_inverse(ext_img_0_qvec).reshape(-1,1).T)
-    delta_R_ext = quaternion_multiply(ext_img_1_qvec, qvec_inverse(ext_img_0_qvec))
-    # print("AAAAA")
-    # print(ext_img_id_0)
-    # print(ext_img_id_1)
-    # print(ext_img_1_qvec)
-    # print(qvec_inverse(ext_img_0_qvec))
-    # print(delta_R_ext)
-    # Not sure if needed
-    # delta_q_ext = rotmat2qvec(delta_R_ext[0:3, 0:3])
-    # delta_R_ref = ref_img_1_qvec.reshape(-1,1) * qvec_inverse(ref_img_0_qvec).reshape(-1,1).T
-    # delta_q_ref = rotmat2qvec(delta_R_ref[0:3, 0:3])
-
-    # Project reference image 0 with the extended model delta rotation
-    # ref_0_proj_qvec = np.matmul(delta_R_ext , ref_img_0_qvec.reshape(-1,1))
-    ref_0_proj_qvec = quaternion_multiply(delta_R_ext , ref_img_0_qvec)
-    # print(ref_0_proj_qvec)
-
-    # Calculate the correction term needed to reach the true image 1. (This is another rotation matrix)
-    # R_ref_proj_correction = ref_img_1_qvec.reshape(-1,1) * qvec_inverse(ref_0_proj_qvec.squeeze()).reshape(-1,1).T
-    model_rotation_hyp = quaternion_multiply(ref_img_1_qvec, qvec_inverse(ref_0_proj_qvec))
-    # print("BBBBBBBBBBBBB")
-    # print(ext_img_id_0)
-    # print(ext_img_id_1)
-    # print(R_ref_proj_correction)
-    # print(ref_0_proj_qvec.squeeze())
-    # print(qvec_conjugate(ref_0_proj_qvec.squeeze()))
-    # print(qvec_inverse(ref_0_proj_qvec.squeeze()))
-    # print(np.linalg.norm(ref_0_proj_qvec.squeeze()))
-
-    # now, to measure the error, we project each reference model image along the two rotations, and calculate the rotation error.
-    test_delta_angles = []
-    for test_ext_img_id_0, test_ext_img_id_1 in ext_img_id_pairs:
-        if test_ext_img_id_0 != ext_img_id_0 and test_ext_img_id_1 != ext_img_id_1:
-            test_ref_img_id_0 = image_id_pairs[test_ext_img_id_0]
-            test_ref_img_id_1 = image_id_pairs[test_ext_img_id_1]
-            test_ref_img_0_qvec = ref_images[test_ref_img_id_0].qvec
-            test_ref_img_1_qvec = ref_images[test_ref_img_id_1].qvec
-
-            # Project image 0 along the proposed rotations.            
-            # test_ref_img_0_proj_qvec = R_ref_proj_correction.dot(delta_R_ext.dot(test_ref_img_0_qvec))
-            test_ref_img_0_proj_qvec = quaternion_multiply(model_rotation_hyp, quaternion_multiply(delta_R_ext, test_ref_img_0_qvec))
-            # print(test_ref_img_0_proj_qvec)
-            # Calculate the delta rotation between the result and actual image 1.
-            # test_delta_R = test_ref_img_1_qvec.reshape(-1,1) * qvec_inverse(test_ref_img_0_proj_qvec).reshape(-1,1).T            
-            # test_delta_qvec = rotmat2qvec(test_delta_R[0:3, 0:3])
-            test_delta_qvec = quaternion_multiply(test_ref_img_1_qvec, qvec_inverse(test_ref_img_0_proj_qvec))      
-            w = test_delta_qvec[0]
-            if w >= 1:
-                w -= np.finfo(float).eps
-            elif w <= -1:
-                w += np.finfo(float).eps
-            # test_delta_angle = 2 * np.arccos(test_delta_qvec[0])
-            test_delta_angle = 2 * np.arccos(w)
-            test_delta_angles.append(test_delta_angle)
-
-    avg_angle_errors.append(mean(test_delta_angles))
-    # print(test_delta_angles)
-
-print(min(avg_angle_errors))
-print(max(avg_angle_errors))
-print(mean(avg_angle_errors))
+# # __vis.set_view_status(json.loads('view_status.json'))
+# print(__vis.get_view_control().convert_to_pinhole_camera_parameters().extrinsic)
 

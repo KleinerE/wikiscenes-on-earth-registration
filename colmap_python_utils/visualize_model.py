@@ -31,7 +31,7 @@ import argparse
 import numpy as np
 import open3d
 
-from read_write_model import read_model, write_model, qvec2rotmat, rotmat2qvec
+# from read_write_model import read_model, write_model, qvec2rotmat, rotmat2qvec
 
 
 class Model:
@@ -183,7 +183,8 @@ def draw_camera(K, R, t, w, h,
     line_set.colors = open3d.utility.Vector3dVector(colors)
 
     # return as list in Open3D format
-    return [axis, plane, line_set]
+    # return [axis, plane, line_set]
+    return [plane, line_set]
 
 
 def parse_args():
