@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import json
 import itertools
+import shutil
 from tqdm import tqdm
 from statistics import mean, median, mode, stdev
 from colmap_python_utils.read_write_model import read_model, Image, qvec2rotmat, rotmat2qvec, read_images_binary
@@ -10,49 +11,7 @@ from colmap_python_utils.visualize_model import draw_camera
 import open3d
 from output_model_score_html import ScoresheetData, create_scoresheet
 
-parser = argparse.ArgumentParser(description='construct indexes for comparing extended model to reference models.')
-parser.add_argument('category_index')
-parser.add_argument('component_index')
-args = parser.parse_args()
 
-print(f"Importing extended model...")
-extended_model_path = f"extended_models/cathedrals/{args.category_index}_new/sparse/0"
-extended_images_path = f"extended_models/cathedrals/{args.category_index}_new/images/"
-extended_images_path_absolute = os.path.abspath(extended_images_path)
-ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
-with open(f"extended_models/cathedrals/{args.category_index}_new/images_new_names.json", 'r') as imgnamesfile:
-    ext_img_orig_names = json.load(imgnamesfile)
-print(f"Done - {len(ext_images)} images  ,  {len(ext_points3D)} points")
-
-print(f"Importing reference model...")
-reference_model_path = f"WikiScenes3D/{args.category_index}/{args.component_index}"
-ref_cameras, ref_images, ref_points3D = read_model(reference_model_path, ext='.txt')
-print(f"Done - {len(ref_images)} images  ,  {len(ref_points3D)} points")
-
-# Find image pairs
-image_id_pairs = {}
-for ext_img_id in ext_images:
-    ext_img_new_name = ext_images[ext_img_id].name
-    if ext_img_new_name in ext_img_orig_names:
-        ext_img_orig_name = ext_img_orig_names[ext_img_new_name]
-    # ext_img_orig_name = ext_img_new_name
-        for ref_img_id in ref_images:
-            ref_img_name = ref_images[ref_img_id].name.split('/')[-1] # WikiScenes3D image names have a 'full' relative path instead of just the image name.
-            if(ref_img_name == ext_img_orig_name):
-                image_id_pairs[ext_img_id] = ref_img_id
-
-print(f"\nModels have {len(image_id_pairs)} common images.")
-
-if(len(image_id_pairs) == 0):
-    exit()
-
-print("\n Computing image orientation error")
-
-### Go over pairs (of pairs) and calculate delta rotations
-
-# get all possible pairs of pairs
-ext_img_id_pairs = list(itertools.combinations(image_id_pairs.keys(), 2))
-ref_img_id_pairs = list(itertools.combinations(image_id_pairs.values(), 2))
 
 def qvec_conjugate(qvec):
     return np.array([qvec[0], -1 * qvec[1], -1 * qvec[2], -1 * qvec[3]])
@@ -92,18 +51,69 @@ def clamp_angle(a):
     return a
 
 def geodesic_error(R1, R2):
-    return np.arccos(0.5 * (np.trace(R1.T @ R2) - 1))
+    t = 0.5 * (np.trace(R1.T @ R2) - 1)
+    t = np.min([t, 1.0 - np.finfo(float).eps])
+    return np.arccos(t)
 
-err_angles = []
-err_angles_w_images = []
-image_errs = {}
+
+parser = argparse.ArgumentParser(description='construct indexes for comparing extended model to reference models.')
+parser.add_argument('category_index')
+parser.add_argument('component_index')
+parser.add_argument('--user-view-adjust', nargs='?', default=False, const=True)
+args = parser.parse_args()
+
+# Load models.
+print(f"Importing extended model...")
+extended_model_root = f"extended_models/cathedrals/{args.category_index}_new"
+extended_model_path = f"{extended_model_root}/sparse/0"
+extended_images_path = f"extended_models/cathedrals/{args.category_index}_new/images/"
+extended_images_path_absolute = os.path.abspath(extended_images_path)
+extended_model_root_absolute = os.path.abspath(extended_model_root)
+pair_visualizations_path = f"{extended_model_root_absolute}/image_pair_vis/"
+ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
+with open(f"extended_models/cathedrals/{args.category_index}_new/images_new_names.json", 'r') as imgnamesfile:
+    ext_img_orig_names = json.load(imgnamesfile)
+print(f"Done - {len(ext_images)} images  ,  {len(ext_points3D)} points")
+
+print(f"Importing reference model...")
+reference_model_path = f"WikiScenes3D/{args.category_index}/{args.component_index}"
+ref_cameras, ref_images, ref_points3D = read_model(reference_model_path, ext='.txt')
+print(f"Done - {len(ref_images)} images  ,  {len(ref_points3D)} points")
+
+# Build a mapping between extended model image ID to reference model image ID.
+ext2ref_id_map = {}
+for ext_img_id in ext_images:
+    ext_img_new_name = ext_images[ext_img_id].name
+    if ext_img_new_name in ext_img_orig_names:
+        ext_img_orig_name = ext_img_orig_names[ext_img_new_name]
+        for ref_img_id in ref_images:
+            ref_img_name = ref_images[ref_img_id].name.split('/')[-1] # WikiScenes3D image names have a 'full' relative path instead of just the image name.
+            if(ref_img_name == ext_img_orig_name):
+                ext2ref_id_map[ext_img_id] = ref_img_id
+
+print(f"\nModels have {len(ext2ref_id_map)} common images.")
+
+if(len(ext2ref_id_map) == 0):
+    exit()
+
+print("\n Computing image orientation error")
+
+# Go over pairs of images and calculate delta rotations
+
+## get all possible pairs of images
+ext_img_id_pairs = list(itertools.combinations(ext2ref_id_map.keys(), 2))
+# ref_img_id_pairs = list(itertools.combinations(ext2ref_id_map.values(), 2))
+
+err_angles = [] # list of all orientation errors (one for each image pair)
+err_angles_w_images = [] # list of tuples - (id0, id1, error)
+image_errs = {} # mapping of <image id> -> <list of all relevant errors>. will be used to determine most and least accurate images.
 
 for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
     # extract qvecs
     ext_img_0_qvec = ext_images[ext_img_id_0].qvec
     ext_img_1_qvec = ext_images[ext_img_id_1].qvec
-    ref_img_id_0 = image_id_pairs[ext_img_id_0]
-    ref_img_id_1 = image_id_pairs[ext_img_id_1]
+    ref_img_id_0 = ext2ref_id_map[ext_img_id_0]
+    ref_img_id_1 = ext2ref_id_map[ext_img_id_1]
     ref_img_0_qvec = ref_images[ref_img_id_0].qvec
     ref_img_1_qvec = ref_images[ref_img_id_1].qvec
 
@@ -130,40 +140,27 @@ for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
     if ext_images[ext_img_id_1].name not in image_errs:
         image_errs[ext_images[ext_img_id_1].name] = []
     image_errs[ext_images[ext_img_id_1].name].append(error)
-    # err_angles.append(angle_ext - angle_ref)
 
-
-# print(f"number of pairs: {len(err_angles)}")
-# print(f"min angle error: {min(err_angles)}")
-# print(f"max angle error: {max(err_angles)}")
-# print(f"avg angle error: {mean(err_angles)}")
-# print(f"median angle error: {median(err_angles)}")
-# print(f"mode angle error: {mode(err_angles)}")
-image_errs_avg = {}
+image_errs_avg = {} # mapping of <image id> -> <median error value>
 for k, v in image_errs.items():
     image_errs_avg[k] = median(v)
 
+## sort images by median error -> most accurate images are at the top. 
 image_errs_avg_sorted = dict(sorted(image_errs_avg.items(), key=lambda item: item[1]))
 
-# with open("test.txt", 'w') as f:
-#     f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in err_angles_w_images))
+## sort tuples by error -> most accurate image pair is at the top and least accurate pair is at the bottom.
+image_pairs_sorted = sorted(err_angles_w_images, key=lambda item: item[2])
 
-# with open("test1.json", 'w') as f:
-#     f.write(json.dumps(image_errs_avg_sorted, indent=2))
-
+## finally - the orientation score is simply the mean image orientation error (across all common images).
 print(f"orientation score: {mean(image_errs_avg.values())}")
 
-image_pairs_sorted = sorted(err_angles_w_images, key=lambda item: item[2])
-# with open("test_sorted.txt", 'w') as f:
-#     f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in image_pairs_sorted))
 
-
-frames = []
-def add_image(img, cameras, color=[0.8, 0.2, 0.8], scale=1):
+# Visualize.
+def add_image(img, cameras, color=[0.8, 0.2, 0.8], scale=1, rotation=np.eye(3), translation=np.zeros((3,))):
     # rotation
-    R = qvec2rotmat(img.qvec)
+    R = rotation @ qvec2rotmat(img.qvec)
     # translation
-    t = img.tvec
+    t = translation + img.tvec
     # invert
     t = -R.T @ t
     R = R.T
@@ -191,10 +188,11 @@ def add_image(img, cameras, color=[0.8, 0.2, 0.8], scale=1):
     K[1, 2] = cy
 
     # create axis, plane and pyramed geometries that will be drawn
-    cam_model = draw_camera(K, R, t, cam.width, cam.height, scale, color)    
-    frames.extend(cam_model)
+    cam_model = draw_camera(K, R, t, cam.width, cam.height, scale, color)
+    return cam_model    
+    
 
-def add_points(points3D, min_track_len=3, remove_statistical_outlier=True):
+def add_points(points3D, min_track_len=3, remove_statistical_outlier=True, R=np.eye(3)):
     pcd = open3d.geometry.PointCloud()
 
     xyz = []
@@ -205,7 +203,14 @@ def add_points(points3D, min_track_len=3, remove_statistical_outlier=True):
             continue
         xyz.append(point3D.xyz)
         rgb.append(point3D.rgb / 255)
+    
+    xyz = np.asarray(xyz)
+    xyz = (R @ xyz.T).T
 
+    # t = np.median(xyz, axis=0)
+    # xyz -= t
+
+    xyz = xyz.tolist()
     pcd.points = open3d.utility.Vector3dVector(xyz)
     pcd.colors = open3d.utility.Vector3dVector(rgb)
 
@@ -215,23 +220,71 @@ def add_points(points3D, min_track_len=3, remove_statistical_outlier=True):
                                                     std_ratio=2.0)
 
     return pcd
-    # __vis.add_geometry(pcd, False)
-    # __vis.poll_events()
-    # __vis.update_renderer()
+
+def add_bbox(bbox_size=5, bbox_center=np.zeros((3,))):
+    pcd = open3d.geometry.PointCloud()
+    xyz = np.array([[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0]], dtype=float)
+    xyz *= bbox_size
+    xyz += np.tile(bbox_center, (4,1))
+    rgb = np.ones((4, 3))
+    pcd.points = open3d.utility.Vector3dVector(xyz.tolist())
+    pcd.colors = open3d.utility.Vector3dVector(rgb.tolist())
+    return pcd
+
+def visualize_image_pair(image0, image1, cameras, points3D, output_path, bbox_size=5, bbox_center=np.zeros((3,)), flip_image_rotations=False, user_adjust_view=False):
+    __vis = open3d.visualization.Visualizer()
+    __vis.create_window()
+
+    # Set view boundary by adding a dummy point cloud 
+    __vis.add_geometry(add_bbox(bbox_size, bbox_center))
+
+    # Render cameras.
+    frames = []
+    # R = qvec2rotmat([0.7071068, -0.7071068, 0, 0]) # rotate by -90 degrees along x axis.
+    R = qvec2rotmat([0.8660254, -0.5, 0, 0]) # rotate by -60 degrees along x axis.
+    R_img = R.T if flip_image_rotations else R
+    frames.extend(add_image(image0, cameras, [1, 0.9, 0], rotation=R_img))
+    frames.extend(add_image(image1, cameras, [0.6, 0.6, 0.2], rotation=R_img))
+    for i in frames:
+        __vis.add_geometry(i, False)
+
+    # Render model
+    __vis.add_geometry(add_points(points3D, R=R), False)
+
+    __vis.poll_events()
+    __vis.update_renderer()
+
+    if user_adjust_view:
+        __vis.run()
+    __vis.capture_screen_image(output_path)
+    __vis.destroy_window()
 
 
-frames.append(add_points(ext_points3D))
-add_image(ext_images[image_pairs_sorted[0][0]], ext_cameras, [1, 0.9, 0])
-add_image(ext_images[image_pairs_sorted[0][1]], ext_cameras, [0.6, 0.6, 0.2])
-
-open3d.visualization.draw_geometries(frames,
-                                    zoom=0.05,
-                                    front=[0, -1, 0], # unit vector -> the direction of camera 'front'.
-                                    lookat=[0, 0, 0], # vector -> the point in world to look at. affects the position of the camera.
-                                    up=[0, 0, 1]) # unit vector -> the direciton of camera 'up'.
+if os.path.exists(pair_visualizations_path):
+    shutil.rmtree(pair_visualizations_path)
+if not os.path.exists(pair_visualizations_path):
+    os.makedirs(pair_visualizations_path)
 
 
-exit()
+visualize_image_pair(ext_images[image_pairs_sorted[0][0]], ext_images[image_pairs_sorted[0][1]], ext_cameras, ext_points3D, f"{pair_visualizations_path}/high_0_extended.png", user_adjust_view=args.user_view_adjust)
+visualize_image_pair(ref_images[ext2ref_id_map[image_pairs_sorted[0][0]]], ref_images[ext2ref_id_map[image_pairs_sorted[0][1]]], ref_cameras, ref_points3D, f"{pair_visualizations_path}/high_0_reference.png", flip_image_rotations=True, user_adjust_view=args.user_view_adjust)
+
+visualize_image_pair(ext_images[image_pairs_sorted[1][0]], ext_images[image_pairs_sorted[1][1]], ext_cameras, ext_points3D, f"{pair_visualizations_path}/high_1_extended.png", user_adjust_view=args.user_view_adjust)
+visualize_image_pair(ref_images[ext2ref_id_map[image_pairs_sorted[1][0]]], ref_images[ext2ref_id_map[image_pairs_sorted[1][1]]], ref_cameras, ref_points3D, f"{pair_visualizations_path}/high_1_reference.png", flip_image_rotations=True, user_adjust_view=args.user_view_adjust)
+
+visualize_image_pair(ext_images[image_pairs_sorted[2][0]], ext_images[image_pairs_sorted[2][1]], ext_cameras, ext_points3D, f"{pair_visualizations_path}/high_2_extended.png", user_adjust_view=args.user_view_adjust)
+visualize_image_pair(ref_images[ext2ref_id_map[image_pairs_sorted[2][0]]], ref_images[ext2ref_id_map[image_pairs_sorted[2][1]]], ref_cameras, ref_points3D, f"{pair_visualizations_path}/high_2_reference.png", flip_image_rotations=True, user_adjust_view=args.user_view_adjust)
+
+visualize_image_pair(ext_images[image_pairs_sorted[-1][0]], ext_images[image_pairs_sorted[-1][1]], ext_cameras, ext_points3D, f"{pair_visualizations_path}/low_0_extended.png", user_adjust_view=args.user_view_adjust)
+visualize_image_pair(ref_images[ext2ref_id_map[image_pairs_sorted[-1][0]]], ref_images[ext2ref_id_map[image_pairs_sorted[-1][1]]], ref_cameras, ref_points3D, f"{pair_visualizations_path}/low_0_reference.png", flip_image_rotations=True, user_adjust_view=args.user_view_adjust)
+
+visualize_image_pair(ext_images[image_pairs_sorted[-2][0]], ext_images[image_pairs_sorted[-2][1]], ext_cameras, ext_points3D, f"{pair_visualizations_path}/low_1_extended.png", user_adjust_view=args.user_view_adjust)
+visualize_image_pair(ref_images[ext2ref_id_map[image_pairs_sorted[-2][0]]], ref_images[ext2ref_id_map[image_pairs_sorted[-2][1]]], ref_cameras, ref_points3D, f"{pair_visualizations_path}/low_1_reference.png", flip_image_rotations=True, user_adjust_view=args.user_view_adjust)
+
+visualize_image_pair(ext_images[image_pairs_sorted[-3][0]], ext_images[image_pairs_sorted[-3][1]], ext_cameras, ext_points3D, f"{pair_visualizations_path}/low_2_extended.png", user_adjust_view=args.user_view_adjust)
+visualize_image_pair(ref_images[ext2ref_id_map[image_pairs_sorted[-3][0]]], ref_images[ext2ref_id_map[image_pairs_sorted[-3][1]]], ref_cameras, ref_points3D, f"{pair_visualizations_path}/low_2_reference.png", flip_image_rotations=True, user_adjust_view=args.user_view_adjust)
+
+
 # Create data for scoresheet
 s = ScoresheetData()
 s = s._replace(orientation_score = mean(image_errs_avg.values()))
@@ -290,14 +343,14 @@ def umeyama(P, Q):
     return c, R, t
 
 
-def compute_alignment(ext_images, ref_images, image_id_pairs):
+def compute_alignment(ext_images, ref_images, ext2ref_id_map):
     xyz_a_list = []
     xyz_b_list = []
-    for ext_img_id, ref_img_id in image_id_pairs.items():
+    for ext_img_id, ref_img_id in ext2ref_id_map.items():
         xyz_a_list.append(ext_images[ext_img_id].tvec)
         xyz_b_list.append(ref_images[ref_img_id].tvec)
 
-    if(len(image_id_pairs) < 3):
+    if(len(ext2ref_id_map) < 3):
         return -1, 0, 0
 
     pc_a = np.asarray(xyz_a_list)
@@ -314,7 +367,7 @@ def compute_alignment(ext_images, ref_images, image_id_pairs):
     return c, R, t
 
 print("\n Computing image position error")
-compute_alignment(ext_images, ref_images, image_id_pairs)
+compute_alignment(ext_images, ref_images, ext2ref_id_map)
 
 
 
@@ -327,8 +380,15 @@ plt.show()
 
 
 
-# for i in frames:
-    # __vis.add_geometry(i, False)
+# with open("test.txt", 'w') as f:
+#     f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in err_angles_w_images))
+
+# with open("test1.json", 'w') as f:
+#     f.write(json.dumps(image_errs_avg_sorted, indent=2))
+
+# with open("test_sorted.txt", 'w') as f:
+#     f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in image_pairs_sorted))
+
 
 
 # open3d.visualization.draw_geometries(frames,
@@ -337,13 +397,6 @@ plt.show()
 #                                     # lookat=[-0.41566, 0.0339, 1.95306],
 #                                     lookat=[0, 0, 0],
 #                                     up=[0, -1, 0])
-
-
-# __vis.poll_events()
-# __vis.update_renderer()
-
-# __vis.run()
-# __vis.destroy_window()
 
 
 # # # Create a renderer with the desired image size
