@@ -64,14 +64,14 @@ args = parser.parse_args()
 
 # Load models.
 print(f"Importing extended model...")
-extended_model_root = f"extended_models/cathedrals/{args.category_index}_vocabtree"
+extended_model_root = f"extended_models/cathedrals/{args.category_index}"
 extended_model_path = f"{extended_model_root}/sparse/0"
-extended_images_path = f"extended_models/cathedrals/{args.category_index}_vocabtree/images/"
+extended_images_path = f"extended_models/cathedrals/{args.category_index}/images/"
 extended_images_path_absolute = os.path.abspath(extended_images_path)
 extended_model_root_absolute = os.path.abspath(extended_model_root)
 pair_visualizations_path = f"{extended_model_root_absolute}/image_pair_vis/"
 ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
-with open(f"extended_models/cathedrals/{args.category_index}_vocabtree/images_new_names.json", 'r') as imgnamesfile:
+with open(f"extended_models/cathedrals/{args.category_index}/images_new_names.json", 'r') as imgnamesfile:
     ext_img_orig_names = json.load(imgnamesfile)
 print(f"Done - {len(ext_images)} images  ,  {len(ext_points3D)} points")
 
@@ -80,6 +80,7 @@ reference_model_path = f"WikiScenes3D/{args.category_index}/{args.component_inde
 ref_cameras, ref_images, ref_points3D = read_model(reference_model_path, ext='.txt')
 print(f"Done - {len(ref_images)} images  ,  {len(ref_points3D)} points")
 
+# def analyze_orientation_errors()
 # Build a mapping between extended model image ID to reference model image ID.
 ext2ref_id_map = {}
 for ext_img_id in ext_images:
@@ -231,7 +232,7 @@ def add_bbox(bbox_size=5, bbox_center=np.zeros((3,))):
     pcd.colors = open3d.utility.Vector3dVector(rgb.tolist())
     return pcd
 
-def visualize_image_pair(image0, image0_color, image1, image1_color, cameras, points3D, output_path, bbox_size=5, bbox_center=np.zeros((3,)), flip_image_rotations=False, user_adjust_view=False):
+def visualize_image_pair(image0, image0_color, image1, image1_color, cameras, points3D, output_path, bbox_size=5, bbox_center=np.zeros((3,)), flip_image_rotations=False, user_adjust_view=False, R=np.eye(3)):
     __vis = open3d.visualization.Visualizer()
     __vis.create_window()
 
@@ -240,8 +241,6 @@ def visualize_image_pair(image0, image0_color, image1, image1_color, cameras, po
 
     # Render cameras.
     frames = []
-    # R = qvec2rotmat([0.7071068, -0.7071068, 0, 0]) # rotate by -90 degrees along x axis.
-    R = qvec2rotmat([0.8660254, -0.5, 0, 0]) # rotate by -60 degrees along x axis.
     R_img = R.T if flip_image_rotations else R
     frames.extend(add_image(image0, cameras, image0_color, rotation=R_img))
     frames.extend(add_image(image1, cameras, image1_color, rotation=R_img))
@@ -267,6 +266,16 @@ if not os.path.exists(pair_visualizations_path):
 
 image0_color = [0.2, 0.9, 0.6]
 image1_color = [0.6, 0.6, 0.2]
+R_ext = np.eye(3)
+# R_ext = qvec2rotmat([0.7071068, -0.7071068, 0, 0]) # rotate by -90 degrees along x axis.
+# R_ext = qvec2rotmat([0.7933533, -0.6087614, 0, 0]) # rotate by -75 degrees along x axis.
+# R_ext = qvec2rotmat([0.6087614, -0.7933533, 0, 0]) # rotate by -105 degrees along x axis.
+R_ref = np.eye(3)
+# R_ref = qvec2rotmat([0.8660254, -0.5, 0, 0]) # rotate by -60 degrees along x axis.
+# R_ref = qvec2rotmat([0.9238795, -0.3826834, 0, 0]) # rotate by -45 degrees along x axis.
+# R_ref = qvec2rotmat([0.7933533, -0.6087614, 0, 0]) # rotate by -75 degrees along x axis.
+
+bbox_center_ref = np.array([2,2,0])
 uva=args.user_view_adjust
 
 s = ScoresheetData()
@@ -282,16 +291,18 @@ img0 = ext_images[img0_id]
 img1 = ext_images[img1_id]
 s = s._replace(ornt_img_low_0_0 = os.path.join(extended_images_path_absolute, img0.name))
 s = s._replace(ornt_img_low_0_1 = os.path.join(extended_images_path_absolute, img1.name))
+s = s._replace(ornt_low_0_error = image_pairs_sorted[0][2])
 vis_path = f"{pair_visualizations_path}/low_0_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva)
+visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
 s = s._replace(ornt_vis_low_0_ext = vis_path)
 ## reference model space
 img0 = ref_images[ext2ref_id_map[img0_id]]
 img1 = ref_images[ext2ref_id_map[img1_id]]
 vis_path = f"{pair_visualizations_path}/low_0_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True)
+visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
 s = s._replace(ornt_vis_low_0_ref = vis_path)
 
+exit()
 ## 2nd accurate pair - extended model space
 img0_id = image_pairs_sorted[1][0]
 img1_id = image_pairs_sorted[1][1]
@@ -299,14 +310,15 @@ img0 = ext_images[img0_id]
 img1 = ext_images[img1_id]
 s = s._replace(ornt_img_low_1_0 = os.path.join(extended_images_path_absolute, img0.name))
 s = s._replace(ornt_img_low_1_1 = os.path.join(extended_images_path_absolute, img1.name))
+s = s._replace(ornt_low_1_error = image_pairs_sorted[1][2])
 vis_path = f"{pair_visualizations_path}/low_1_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva)
+visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
 s = s._replace(ornt_vis_low_1_ext = vis_path)
 ## reference model space
 img0 = ref_images[ext2ref_id_map[img0_id]]
 img1 = ref_images[ext2ref_id_map[img1_id]]
 vis_path = f"{pair_visualizations_path}/low_1_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True)
+visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
 s = s._replace(ornt_vis_low_1_ref = vis_path)
 
 ## 3rd accurate pair - extended model space
@@ -316,14 +328,15 @@ img0 = ext_images[img0_id]
 img1 = ext_images[img1_id]
 s = s._replace(ornt_img_low_2_0 = os.path.join(extended_images_path_absolute, img0.name))
 s = s._replace(ornt_img_low_2_1 = os.path.join(extended_images_path_absolute, img1.name))
+s = s._replace(ornt_low_2_error = image_pairs_sorted[2][2])
 vis_path = f"{pair_visualizations_path}/low_2_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva)
+visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
 s = s._replace(ornt_vis_low_2_ext = vis_path)
 ## reference model space
 img0 = ref_images[ext2ref_id_map[img0_id]]
 img1 = ref_images[ext2ref_id_map[img1_id]]
 vis_path = f"{pair_visualizations_path}/low_2_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True)
+visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
 s = s._replace(ornt_vis_low_2_ref = vis_path)
 
 
@@ -334,14 +347,15 @@ img0 = ext_images[img0_id]
 img1 = ext_images[img1_id]
 s = s._replace(ornt_img_high_0_0 = os.path.join(extended_images_path_absolute, img0.name))
 s = s._replace(ornt_img_high_0_1 = os.path.join(extended_images_path_absolute, img1.name))
+s = s._replace(ornt_high_0_error = image_pairs_sorted[-1][2])
 vis_path = f"{pair_visualizations_path}/high_0_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva)
+visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
 s = s._replace(ornt_vis_high_0_ext = vis_path)
 ## reference model space
 img0 = ref_images[ext2ref_id_map[img0_id]]
 img1 = ref_images[ext2ref_id_map[img1_id]]
 vis_path = f"{pair_visualizations_path}/high_0_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True)
+visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
 s = s._replace(ornt_vis_high_0_ref = vis_path)
 
 ## 2nd least accurate pair - extended model space
@@ -351,14 +365,15 @@ img0 = ext_images[img0_id]
 img1 = ext_images[img1_id]
 s = s._replace(ornt_img_high_1_0 = os.path.join(extended_images_path_absolute, img0.name))
 s = s._replace(ornt_img_high_1_1 = os.path.join(extended_images_path_absolute, img1.name))
+s = s._replace(ornt_high_1_error = image_pairs_sorted[-2][2])
 vis_path = f"{pair_visualizations_path}/high_1_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva)
+visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
 s = s._replace(ornt_vis_high_1_ext = vis_path)
 ## reference model space
 img0 = ref_images[ext2ref_id_map[img0_id]]
 img1 = ref_images[ext2ref_id_map[img1_id]]
 vis_path = f"{pair_visualizations_path}/high_1_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True)
+visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
 s = s._replace(ornt_vis_high_1_ref = vis_path)
 
 ## 3rd least accurate pair - extended model space
@@ -368,14 +383,15 @@ img0 = ext_images[img0_id]
 img1 = ext_images[img1_id]
 s = s._replace(ornt_img_high_2_0 = os.path.join(extended_images_path_absolute, img0.name))
 s = s._replace(ornt_img_high_2_1 = os.path.join(extended_images_path_absolute, img1.name))
+s = s._replace(ornt_high_2_error = image_pairs_sorted[-3][2])
 vis_path = f"{pair_visualizations_path}/high_2_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva)
+visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
 s = s._replace(ornt_vis_high_2_ext = vis_path)
 ## reference model space
 img0 = ref_images[ext2ref_id_map[img0_id]]
 img1 = ref_images[ext2ref_id_map[img1_id]]
 vis_path = f"{pair_visualizations_path}/high_2_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True)
+visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
 s = s._replace(ornt_vis_high_2_ref = vis_path)
 
 
