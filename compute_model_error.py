@@ -12,7 +12,6 @@ import open3d
 from output_model_score_html import ScoresheetData, create_scoresheet
 
 
-
 def qvec_conjugate(qvec):
     return np.array([qvec[0], -1 * qvec[1], -1 * qvec[2], -1 * qvec[3]])
 
@@ -157,20 +156,16 @@ print(f"orientation score: {mean(image_errs_avg.values())}")
 
 
 # Visualize.
-def add_image(img, cameras, color=[0.8, 0.2, 0.8], scale=1, rotation=np.eye(3), translation=np.zeros((3,))):
+def add_image(img, cameras, color=[0.8, 0.2, 0.8], scale=1, T=np.eye(4)):
     # rotation
-    # R = rotation @ qvec2rotmat(img.qvec)
-    R = qvec2rotmat(img.qvec)
+    img_transformed = image_apply_transformation(img, T)
+    R = qvec2rotmat(img_transformed.qvec)
     # translation
-    # t = translation + img.tvec
-    t = img.tvec
+    t = img_transformed.tvec
     # invert
     t = -R.T @ t
     R = R.T
 
-    print(R)
-    print(t)
-    print("~")
     # intrinsics
     cam = cameras[img.camera_id]
 
@@ -198,7 +193,7 @@ def add_image(img, cameras, color=[0.8, 0.2, 0.8], scale=1, rotation=np.eye(3), 
     return cam_model    
     
 
-def add_points(points3D, min_track_len=3, remove_statistical_outlier=True, R=np.eye(3), t=np.zeros(3,), T=np.eye(4)):
+def add_points(points3D, min_track_len=3, remove_statistical_outlier=True, T=np.eye(4)):
     pcd = open3d.geometry.PointCloud()
 
     xyz = []
@@ -207,24 +202,12 @@ def add_points(points3D, min_track_len=3, remove_statistical_outlier=True, R=np.
         track_len = len(point3D.point2D_idxs)
         if track_len < min_track_len:
             continue
-        # xyz.append(point3D.xyz)
         xyzw = np.append(point3D.xyz ,1)
         xyzw = np.dot(T, xyzw)
         xyzw /= xyzw[3]
-        # xyz.append(point3D.xyz)
         xyz.append(xyzw[:3])
         rgb.append(point3D.rgb / 255)
-    
-    # xyz = np.asarray(xyz)
-    # # xyz = (R @ xyz.T).T
-    # # xyz = np.vstack((xyz, np.tile(1, xyz.shape[0]))
-    # # xyz = xyz @ T
-    # # xyz = (xyz @ R)
 
-    # t_tiled = np.tile(t, (xyz.shape[0],1))
-    # xyz += t_tiled
-
-    # xyz = xyz.tolist()
     pcd.points = open3d.utility.Vector3dVector(xyz)
     pcd.colors = open3d.utility.Vector3dVector(rgb)
 
@@ -239,24 +222,10 @@ def add_bbox(bbox_size=5, bbox_center=np.zeros((3,))):
     pcd = open3d.geometry.PointCloud()
     xyz = np.array([[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0]], dtype=float)
     xyz *= bbox_size
-    # xyz += np.tile(bbox_center, (4,1))
     rgb = np.ones((4, 3))
     pcd.points = open3d.utility.Vector3dVector(xyz.tolist())
     pcd.colors = open3d.utility.Vector3dVector(rgb.tolist())
     return pcd
-
-
-# def add_bbox_around_image(image, bbox_size=5):
-#     pcd = open3d.geometry.PointCloud()
-#     print(image.qvec)
-#     xyz = np.array([[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0]], dtype=float)
-#     xyz = xyz @ qvec2rotmat(image.qvec).T
-#     xyz *= bbox_size
-#     xyz += np.tile(image.tvec, (4,1))
-#     rgb = np.ones((4, 3))
-#     pcd.points = open3d.utility.Vector3dVector(xyz.tolist())
-#     pcd.colors = open3d.utility.Vector3dVector(rgb.tolist())
-#     return pcd
 
 
 def get_model_center_of_mass(points3D):
@@ -269,7 +238,7 @@ def get_model_center_of_mass(points3D):
 
 
 
-def visualize_image_pair(image0, image0_color, image1, image1_color, cameras, points3D, output_path, bbox_size=5, bbox_center=np.zeros((3,)), flip_image_rotations=False, user_adjust_view=False, R=np.eye(3), T=np.eye(4)):
+def render_image_pair(image0, image0_color, image1, image1_color, cameras, points3D, output_path, bbox_size=5, bbox_center=np.zeros((3,)), user_adjust_view=False, T=np.eye(4)): #, flip_image_rotations=False, R=np.eye(3)):
     __vis = open3d.visualization.Visualizer()
     __vis.create_window()
 
@@ -278,31 +247,19 @@ def visualize_image_pair(image0, image0_color, image1, image1_color, cameras, po
     __vis.add_geometry(add_bbox(bbox_size, bbox_center))
     axis = open3d.geometry.TriangleMesh.create_coordinate_frame(size=1)
     __vis.add_geometry(axis, False)
-    # __vis.add_geometry(add_bbox_around_image(image0, bbox_size))
-
-    # rotate images to center on image0.
     
     # Render cameras.
     frames = []
-    R_img = R
-    # R_img = R.T if flip_image_rotations else R
-    # R_img = qvec2rotmat(image0.qvec).T
-    # R_img = qvec2rotmat([0, 0, 0, 1]).T
-    # R_img = (qvec2rotmat(image0.qvec) @ qvec2rotmat([0, 0, 1, 0])).T
-    # R_img = (qvec2rotmat(image0.qvec) @ qvec2rotmat([0, 0, 0, 1]) @ qvec2rotmat([0, 0, 1, 0]) @ qvec2rotmat([0.9659, 0.2588, 0, 0])).T
-    t_img = np.zeros((3,))
-    # t_img = image0.tvec
-    # t_img = (image0.tvec + [0, -3, 0]) * -1
-    frames.extend(add_image(image0, cameras, image0_color, rotation=R_img, translation=t_img))
-    frames.extend(add_image(image1, cameras, image1_color, rotation=R_img, translation=t_img))
+    frames.extend(add_image(image0, cameras, image0_color, T=T))
+    frames.extend(add_image(image1, cameras, image1_color, T=T))
     for i in frames:
         __vis.add_geometry(i, False)
 
     # Render model
-    __vis.add_geometry(add_points(points3D, R=R_img, T=T), False)
+    __vis.add_geometry(add_points(points3D, T=T), False)
     # pcd = open3d.geometry.PointCloud()
     # rgb = np.zeros((1, 3))
-    # xyz = get_model_center_of_mass(ext_points3D)
+    # xyz = get_model_center_of_mass(points3D)
     # pcd.points = open3d.utility.Vector3dVector(np.expand_dims(xyz, axis=0).tolist())
     # pcd.colors = open3d.utility.Vector3dVector(rgb.tolist())
     # __vis.add_geometry(pcd, False)
@@ -321,33 +278,39 @@ if os.path.exists(pair_visualizations_path):
 if not os.path.exists(pair_visualizations_path):
     os.makedirs(pair_visualizations_path)
 
-image0_color = [0.2, 0.9, 0.6]
-image1_color = [0.6, 0.6, 0.2]
-R_ext = np.eye(3)
-# R_ext = qvec2rotmat([0.7071068, -0.7071068, 0, 0]) # rotate by -90 degrees along x axis.
-# R_ext = qvec2rotmat([0.7933533, -0.6087614, 0, 0]) # rotate by -75 degrees along x axis.
-# R_ext = qvec2rotmat([0.6087614, -0.7933533, 0, 0]) # rotate by -105 degrees along x axis.
-R_ref = np.eye(3)
-# R_ref = qvec2rotmat([0.8660254, -0.5, 0, 0]) # rotate by -60 degrees along x axis.
-# R_ref = qvec2rotmat([0.9238795, -0.3826834, 0, 0]) # rotate by -45 degrees along x axis.
-# R_ref = qvec2rotmat([0.7933533, -0.6087614, 0, 0]) # rotate by -75 degrees along x axis.
 
-bbox_center_ref = np.array([2,2,0])
+def create_transform(R, t):
+    T = np.column_stack((R, t))
+    T = np.vstack((T, (0, 0, 0, 1)))
+    return T
+
+def split_transform(T):
+    R = T[:3, :3]
+    t = T[:3, 3].squeeze()
+    return R, t
+
+## visualization consts
 uva=args.user_view_adjust
 
-s = ScoresheetData()
-s = s._replace(orientation_score = mean(image_errs_avg.values()))
-s = s._replace(image_color_0 = image0_color)
-s = s._replace(image_color_1 = image1_color)
+bbox_center_ref = np.array([2,2,0])
+image0_color = [0.2, 0.9, 0.6]
+image1_color = [0.6, 0.6, 0.2]
 
+# "view" transform relative to chosen image - rotate along x axis by 210 degrees and move forwards & upwards.
+R_view = qvec2rotmat([-0.258819, 0.9659258, 0, 0])
+t_view = ([0, -1.5, 4])
+T_view = create_transform(R_view, t_view)
+
+s = ScoresheetData()
+s.orientation_score = mean(image_errs_avg.values())
+s.image_color_0 = image0_color
+s.image_color_1 = image1_color
 
 def get_image_inverse_transform(img):
     # COLMAP stores the image-to-world transform in the image data.
     R = qvec2rotmat(img.qvec)
     t = img.tvec
-    T = np.column_stack((R, t))
-    T = np.vstack((T, (0, 0, 0, 1)))
-    return T
+    return create_transform(R, t)
 
 def get_image_world_transform(img):
     # COLMAP stores the image-to-world transform in the image data.
@@ -361,210 +324,99 @@ def image_apply_transformation(img, T):
 
     # COLMAP stores the image-to-world transform in the image data.
     T_img_new_inv = np.linalg.inv(T_img_new)
-    R_img_new = T_img_new_inv[:3, :3]
-    t_img_new = T_img_new_inv[:3, 3].squeeze()
+    R_img_new, t_img_new = split_transform(T_img_new_inv)
     return img._replace(qvec = rotmat2qvec(R_img_new), tvec = t_img_new)
 
+# determine by simple heuristic if image0 sees both image1 and the model's center, and same for image1.
+def determine_image_pair_lineofsight(img0, img1, points3D):
+    model_center = get_model_center_of_mass(points3D)
+    t0 = -img0.tvec
+    t1 = -img1.tvec
 
-## least accurate pair (highest error) - extended model space
-img0_id = image_pairs_sorted[-1][0]
-img1_id = image_pairs_sorted[-1][1]
-img0 = ext_images[img0_id]
-img1 = ext_images[img1_id]
+    t0_to_model = model_center - t0
+    t1_to_model = model_center - t1
+    t0_to_t1 = t1-t0
 
-# R0 = qvec2rotmat(img0.qvec)
-# t0 = img0.tvec
-# T0_inv = np.column_stack((R0, t0))
-# T0_inv = np.vstack((T0_inv, (0, 0, 0, 1)))
-# T0 = np.linalg.inv(T0_inv)
-# T0_new = T0_inv @ T0
-# T0_new_inv = np.linalg.inv(T0_new)
-# R0_new = T0_new_inv[:3, :3]
-# t0_new = T0_new_inv[:3, 3].squeeze()
+    return np.dot(t0_to_model, t0_to_t1)>=0, np.dot(t1_to_model, -t0_to_t1)>=0
 
-# # print(t0)
-# # print(T0)
-# # print(T0inv)
-# # exit()
-# # rot0_new = rot0.T @ rot0
-# # t0_new = rot0.T @ (t0-t0)
-# print("img0 tvec, qvec:")
-# print(img0.tvec)
-# print(img0.qvec)
-# print("#")
-# print("img1 tvec, qvec:")
-# print(img1.tvec)
-# print(img1.qvec)
-# print("###")
+# run the above tests on the extended model & reference model - if we have an agreement on one image for both models, use that image.
+def determine_image_pair_best_image(ext_img0, ext_img1, ext_points3D, ref_img0, ref_img1, ref_points3D):
+    l0_ext, l1_ext = determine_image_pair_lineofsight(ext_img0, ext_img1, ext_points3D)
+    l0_ref, l1_ref = determine_image_pair_lineofsight(ref_img0, ref_img1, ref_points3D)
+    if(l0_ext and l0_ref):
+        return 0
+    if(l1_ext and l1_ref):
+        return 1
+    return -1
 
-# R1 = qvec2rotmat(img1.qvec)
-# t1 = img1.tvec
-# T1_inv = np.column_stack((R1, t1))
-# T1_inv = np.vstack((T1_inv, (0, 0, 0, 1)))
-# T1 = np.linalg.inv(T1_inv)
-# T1_new = T0_inv @ T1
-# T1_new_inv = np.linalg.inv(T1_new)
-# R1_new = T1_new_inv[:3, :3]
-# t1_new = T1_new_inv[:3, 3].squeeze()
+def create_image_pair_visualizations(img0_id, img1_id, error, img0_color, img1_color, name, T_view, user_view_adjust=False):
+    ext_img0 = ext_images[img0_id]
+    ext_img1 = ext_images[img1_id]
+    ref_img0 = ref_images[ext2ref_id_map[img0_id]]
+    ref_img1 = ref_images[ext2ref_id_map[img1_id]]
+    chosen_idx = determine_image_pair_best_image(ext_img0, ext_img1, ext_points3D, ref_img0, ref_img1, ref_points3D)
 
-# # R1_new = (R0.T @ R1)
-# # t1_new = R0.T @ (t0-t1)
-# print("new rotations:")
-# print(R0_new)
-# print(rotmat2qvec(R0_new))
-# print(R1_new)
-# img0 = img0._replace(qvec = rotmat2qvec(R0_new), tvec = t0_new)
-# img1 = img1._replace(qvec = rotmat2qvec(R1_new), tvec = t1_new)
-# print("img0 tvec, qvec:")
-# print(img0.tvec)
-# print(img0.qvec)
-# print("#")
-# print("img1 tvec, qvec:")
-# print(img1.tvec)
-# print(img1.qvec)
-# print("###")
+    setattr(s, f"ornt_img_{name}_0", os.path.join(extended_images_path_absolute, ext_img0.name))
+    setattr(s, f"ornt_img_{name}_1", os.path.join(extended_images_path_absolute, ext_img1.name))
+    setattr(s, f"ornt_{name}_error",error)
 
-T0_inv = get_image_inverse_transform(img0)
-T0 = get_image_world_transform(img0)
-img0 = image_apply_transformation(img0, T0_inv)
-img1 = image_apply_transformation(img1, T0_inv)
+    # extended model space
+    T_chosen_img_inv = get_image_inverse_transform(ext_img1) if chosen_idx == 1 else get_image_inverse_transform(ext_img1)
+    T_scene = T_view @ T_chosen_img_inv
 
-s = s._replace(ornt_img_high_0_0 = os.path.join(extended_images_path_absolute, img0.name))
-s = s._replace(ornt_img_high_0_1 = os.path.join(extended_images_path_absolute, img1.name))
-s = s._replace(ornt_high_0_error = image_pairs_sorted[-1][2])
-vis_path = f"{pair_visualizations_path}/high_0_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext, T=T0_inv)
-s = s._replace(ornt_vis_high_0_ext = vis_path)
-## reference model space
-img0 = ref_images[ext2ref_id_map[img0_id]]
-img1 = ref_images[ext2ref_id_map[img1_id]]
-vis_path = f"{pair_visualizations_path}/high_0_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
-s = s._replace(ornt_vis_high_0_ref = vis_path)
+    vis_path = f"{pair_visualizations_path}/{name}_extended.png"
+    render_image_pair(ext_img0, img0_color, ext_img1, img1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, T=T_scene)
+    setattr(s, f"ornt_vis_{name}_ext", vis_path)
 
-exit()
+    ## reference model space
+    T_chosen_img_inv = get_image_inverse_transform(ref_img1) if chosen_idx == 1 else get_image_inverse_transform(ref_img1)
+    T_scene = T_view @ T_chosen_img_inv
 
-## most accurate pair (lowest error) - extended model space
+    vis_path = f"{pair_visualizations_path}/{name}_reference.png"
+    render_image_pair(ref_img0, img0_color, ref_img1, img1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, T=T_scene)
+    setattr(s, f"ornt_vis_{name}_ref", vis_path)
+
+## most accurate pair (lowest error)
 img0_id = image_pairs_sorted[0][0]
 img1_id = image_pairs_sorted[0][1]
-img0 = ext_images[img0_id]
-img1 = ext_images[img1_id]
+error = image_pairs_sorted[0][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "low_0", T_view, user_view_adjust=uva)
 
-# print(img0.tvec)
-# print(img0.qvec)
-# exit()
-# print(img1.tvec)
-# get_model_center_of_mass(ext_points3D)
-
-s = s._replace(ornt_img_low_0_0 = os.path.join(extended_images_path_absolute, img0.name))
-s = s._replace(ornt_img_low_0_1 = os.path.join(extended_images_path_absolute, img1.name))
-s = s._replace(ornt_low_0_error = image_pairs_sorted[0][2])
-vis_path = f"{pair_visualizations_path}/low_0_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
-s = s._replace(ornt_vis_low_0_ext = vis_path)
-## reference model space
-img0 = ref_images[ext2ref_id_map[img0_id]]
-img1 = ref_images[ext2ref_id_map[img1_id]]
-vis_path = f"{pair_visualizations_path}/low_0_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
-s = s._replace(ornt_vis_low_0_ref = vis_path)
-
-exit()
-## 2nd accurate pair - extended model space
+## 2nd accurate pair
 img0_id = image_pairs_sorted[1][0]
 img1_id = image_pairs_sorted[1][1]
-img0 = ext_images[img0_id]
-img1 = ext_images[img1_id]
-s = s._replace(ornt_img_low_1_0 = os.path.join(extended_images_path_absolute, img0.name))
-s = s._replace(ornt_img_low_1_1 = os.path.join(extended_images_path_absolute, img1.name))
-s = s._replace(ornt_low_1_error = image_pairs_sorted[1][2])
-vis_path = f"{pair_visualizations_path}/low_1_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
-s = s._replace(ornt_vis_low_1_ext = vis_path)
-## reference model space
-img0 = ref_images[ext2ref_id_map[img0_id]]
-img1 = ref_images[ext2ref_id_map[img1_id]]
-vis_path = f"{pair_visualizations_path}/low_1_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
-s = s._replace(ornt_vis_low_1_ref = vis_path)
+error = image_pairs_sorted[1][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "low_1", T_view, user_view_adjust=uva)
 
-## 3rd accurate pair - extended model space
+## 3rd accurate pair
 img0_id = image_pairs_sorted[2][0]
 img1_id = image_pairs_sorted[2][1]
-img0 = ext_images[img0_id]
-img1 = ext_images[img1_id]
-s = s._replace(ornt_img_low_2_0 = os.path.join(extended_images_path_absolute, img0.name))
-s = s._replace(ornt_img_low_2_1 = os.path.join(extended_images_path_absolute, img1.name))
-s = s._replace(ornt_low_2_error = image_pairs_sorted[2][2])
-vis_path = f"{pair_visualizations_path}/low_2_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
-s = s._replace(ornt_vis_low_2_ext = vis_path)
-## reference model space
-img0 = ref_images[ext2ref_id_map[img0_id]]
-img1 = ref_images[ext2ref_id_map[img1_id]]
-vis_path = f"{pair_visualizations_path}/low_2_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
-s = s._replace(ornt_vis_low_2_ref = vis_path)
+error = image_pairs_sorted[2][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "low_2", T_view, user_view_adjust=uva)
 
-
-## least accurate pair (highest error) - extended model space
+## least accurate pair (highest error)
 img0_id = image_pairs_sorted[-1][0]
 img1_id = image_pairs_sorted[-1][1]
-img0 = ext_images[img0_id]
-img1 = ext_images[img1_id]
-s = s._replace(ornt_img_high_0_0 = os.path.join(extended_images_path_absolute, img0.name))
-s = s._replace(ornt_img_high_0_1 = os.path.join(extended_images_path_absolute, img1.name))
-s = s._replace(ornt_high_0_error = image_pairs_sorted[-1][2])
-vis_path = f"{pair_visualizations_path}/high_0_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
-s = s._replace(ornt_vis_high_0_ext = vis_path)
-## reference model space
-img0 = ref_images[ext2ref_id_map[img0_id]]
-img1 = ref_images[ext2ref_id_map[img1_id]]
-vis_path = f"{pair_visualizations_path}/high_0_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
-s = s._replace(ornt_vis_high_0_ref = vis_path)
+error = image_pairs_sorted[-1][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "high_0", T_view, user_view_adjust=uva)
 
-## 2nd least accurate pair - extended model space
+## 2nd least accurate pair
 img0_id = image_pairs_sorted[-2][0]
 img1_id = image_pairs_sorted[-2][1]
-img0 = ext_images[img0_id]
-img1 = ext_images[img1_id]
-s = s._replace(ornt_img_high_1_0 = os.path.join(extended_images_path_absolute, img0.name))
-s = s._replace(ornt_img_high_1_1 = os.path.join(extended_images_path_absolute, img1.name))
-s = s._replace(ornt_high_1_error = image_pairs_sorted[-2][2])
-vis_path = f"{pair_visualizations_path}/high_1_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
-s = s._replace(ornt_vis_high_1_ext = vis_path)
-## reference model space
-img0 = ref_images[ext2ref_id_map[img0_id]]
-img1 = ref_images[ext2ref_id_map[img1_id]]
-vis_path = f"{pair_visualizations_path}/high_1_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
-s = s._replace(ornt_vis_high_1_ref = vis_path)
+error = image_pairs_sorted[-2][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "high_1", T_view, user_view_adjust=uva)
 
-## 3rd least accurate pair - extended model space
+## 3rd least accurate pair
 img0_id = image_pairs_sorted[-3][0]
 img1_id = image_pairs_sorted[-3][1]
-img0 = ext_images[img0_id]
-img1 = ext_images[img1_id]
-s = s._replace(ornt_img_high_2_0 = os.path.join(extended_images_path_absolute, img0.name))
-s = s._replace(ornt_img_high_2_1 = os.path.join(extended_images_path_absolute, img1.name))
-s = s._replace(ornt_high_2_error = image_pairs_sorted[-3][2])
-vis_path = f"{pair_visualizations_path}/high_2_extended.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext)
-s = s._replace(ornt_vis_high_2_ext = vis_path)
-## reference model space
-img0 = ref_images[ext2ref_id_map[img0_id]]
-img1 = ref_images[ext2ref_id_map[img1_id]]
-vis_path = f"{pair_visualizations_path}/high_2_reference.png"
-visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
-s = s._replace(ornt_vis_high_2_ref = vis_path)
+error = image_pairs_sorted[-3][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "high_2", T_view, user_view_adjust=uva)
 
 
 create_scoresheet(s, extended_model_path)
 
 exit()
+
 
 # Relevant links:
 #   - http://stackoverflow.com/a/32244818/263061 (solution with scale)
@@ -638,49 +490,3 @@ import matplotlib.pyplot as plt
 # sns.kdeplot(np.array(err_angles), bw_adjust=0.05)
 sns.displot(np.array(err_angles))
 plt.show()
-
-
-
-# with open("test.txt", 'w') as f:
-#     f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in err_angles_w_images))
-
-# with open("test1.json", 'w') as f:
-#     f.write(json.dumps(image_errs_avg_sorted, indent=2))
-
-# with open("test_sorted.txt", 'w') as f:
-#     f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in image_pairs_sorted))
-
-
-
-# open3d.visualization.draw_geometries(frames,
-#                                     zoom=0.03,
-#                                     front=[10, -10, 10],
-#                                     # lookat=[-0.41566, 0.0339, 1.95306],
-#                                     lookat=[0, 0, 0],
-#                                     up=[0, -1, 0])
-
-
-# # # Create a renderer with the desired image size
-# img_width = 640
-# img_height = 480
-# render = open3d.visualization.rendering.OffscreenRenderer(img_width, img_height)
-# exit()
-
-# __vis = open3d.visualization.Visualizer()
-# __vis.create_window()
-
-# print(__vis.get_view_control().convert_to_pinhole_camera_parameters().extrinsic)
-# ctr = __vis.get_view_control()
-# #This line will obtain the default camera parameters .
-# camera_params = ctr.convert_to_pinhole_camera_parameters() 
-# extrinsic_mat = np.eye(4)
-# extrinsic_mat[0][0] = -1
-# extrinsic_mat[2][2] = -1
-# extrinsic_mat[0][3] = 1000
-# camera_params.extrinsic = extrinsic_mat
-# # leaving camera intrinsics untouched
-# ctr.convert_from_pinhole_camera_parameters(camera_params)
-
-# # __vis.set_view_status(json.loads('view_status.json'))
-# print(__vis.get_view_control().convert_to_pinhole_camera_parameters().extrinsic)
-

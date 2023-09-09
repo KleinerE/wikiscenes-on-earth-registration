@@ -1,35 +1,54 @@
 from bs4 import BeautifulSoup
-from collections import namedtuple
+from dataclasses import dataclass, field
 
-fields = ['orientation_score',
-        'ornt_img_low_0_0', 'ornt_img_low_0_1',
-        'ornt_vis_low_0_ext', 'ornt_vis_low_0_ref',
-        'ornt_low_0_error',
-        'ornt_img_low_1_0', 'ornt_img_low_1_1',
-        'ornt_vis_low_1_ext', 'ornt_vis_low_1_ref',
-        'ornt_low_1_error',
-        'ornt_img_low_2_0', 'ornt_img_low_2_1',
-        'ornt_vis_low_2_ext', 'ornt_vis_low_2_ref',
-        'ornt_low_2_error',
-        'ornt_img_high_0_0', 'ornt_img_high_0_1',
-        'ornt_vis_high_0_ext', 'ornt_vis_high_0_ref',
-        'ornt_high_0_error',
-        'ornt_img_high_1_0', 'ornt_img_high_1_1',
-        'ornt_vis_high_1_ext', 'ornt_vis_high_1_ref',
-        'ornt_high_1_error',
-        'ornt_img_high_2_0', 'ornt_img_high_2_1',
-        'ornt_vis_high_2_ext', 'ornt_vis_high_2_ref',
-        'ornt_high_2_error',
-        'position_score',                                                
-        'pos_img_low_0_0', 'pos_img_low_0_1',
-        'pos_img_low_1_0', 'pos_img_low_1_1',
-        'pos_img_low_2_0', 'pos_img_low_2_1',
-        'pos_img_high_0_0', 'pos_img_high_0_1',
-        'pos_img_high_1_0', 'pos_img_high_1_1',
-        'pos_img_high_2_0', 'pos_img_high_2_1',
-        'image_color_0', 'image_color_1']
-
-ScoresheetData = namedtuple('ScoresheetData', fields, defaults=(None,) * len(fields))
+@dataclass
+class ScoresheetData:
+    image_color_0: list = field(default_factory=list)# = [0, 0, 0]
+    image_color_1: list = field(default_factory=list)# = [0, 0, 0]
+    orientation_score: float = 0
+    ornt_img_low_0_0: str = ""
+    ornt_img_low_0_1: str = ""
+    ornt_vis_low_0_ext: str = ""
+    ornt_vis_low_0_ref: str = ""
+    ornt_low_0_error: float = 0
+    ornt_img_low_1_0: str = ""
+    ornt_img_low_1_1: str = ""
+    ornt_vis_low_1_ext: str = ""
+    ornt_vis_low_1_ref: str = ""
+    ornt_low_1_error: float = 0
+    ornt_img_low_2_0: str = ""
+    ornt_img_low_2_1: str = ""
+    ornt_vis_low_2_ext: str = ""
+    ornt_vis_low_2_ref: str = ""
+    ornt_low_2_error: float = 0
+    ornt_img_high_0_0: str = ""
+    ornt_img_high_0_1: str = ""
+    ornt_vis_high_0_ext: str = ""
+    ornt_vis_high_0_ref: str = ""
+    ornt_high_0_error: float = 0
+    ornt_img_high_1_0: str = ""
+    ornt_img_high_1_1: str = ""
+    ornt_vis_high_1_ext: str = ""
+    ornt_vis_high_1_ref: str = ""
+    ornt_high_1_error: float = 0
+    ornt_img_high_2_0: str = ""
+    ornt_img_high_2_1: str = ""
+    ornt_vis_high_2_ext: str = ""
+    ornt_vis_high_2_ref: str = ""
+    ornt_high_2_error: float = 0
+    position_score: float = 0
+    pos_img_low_0_0: str = ""
+    pos_img_low_0_1: str = ""
+    pos_img_low_1_0: str = ""
+    pos_img_low_1_1: str = ""
+    pos_img_low_2_0: str = ""
+    pos_img_low_2_1: str = ""
+    pos_img_high_0_0: str = ""
+    pos_img_high_0_1: str = ""
+    pos_img_high_1_0: str = ""
+    pos_img_high_1_1: str = ""
+    pos_img_high_2_0: str = ""
+    pos_img_high_2_1: str = ""
 
 def create_scoresheet(scoresheet_data, output_folder):
 
