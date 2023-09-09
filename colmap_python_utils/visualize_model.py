@@ -183,8 +183,8 @@ def draw_camera(K, R, t, w, h,
     line_set.colors = open3d.utility.Vector3dVector(colors)
 
     # return as list in Open3D format
-    # return [axis, plane, line_set]
-    return [plane, line_set]
+    return [axis, plane, line_set]
+    # return [plane, line_set]
 
 
 def parse_args():

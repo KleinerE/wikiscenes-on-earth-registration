@@ -159,13 +159,18 @@ print(f"orientation score: {mean(image_errs_avg.values())}")
 # Visualize.
 def add_image(img, cameras, color=[0.8, 0.2, 0.8], scale=1, rotation=np.eye(3), translation=np.zeros((3,))):
     # rotation
-    R = rotation @ qvec2rotmat(img.qvec)
+    # R = rotation @ qvec2rotmat(img.qvec)
+    R = qvec2rotmat(img.qvec)
     # translation
-    t = translation + img.tvec
+    # t = translation + img.tvec
+    t = img.tvec
     # invert
     t = -R.T @ t
     R = R.T
 
+    print(R)
+    print(t)
+    print("~")
     # intrinsics
     cam = cameras[img.camera_id]
 
@@ -193,7 +198,7 @@ def add_image(img, cameras, color=[0.8, 0.2, 0.8], scale=1, rotation=np.eye(3), 
     return cam_model    
     
 
-def add_points(points3D, min_track_len=3, remove_statistical_outlier=True, R=np.eye(3)):
+def add_points(points3D, min_track_len=3, remove_statistical_outlier=True, R=np.eye(3), t=np.zeros(3,), T=np.eye(4)):
     pcd = open3d.geometry.PointCloud()
 
     xyz = []
@@ -202,16 +207,24 @@ def add_points(points3D, min_track_len=3, remove_statistical_outlier=True, R=np.
         track_len = len(point3D.point2D_idxs)
         if track_len < min_track_len:
             continue
-        xyz.append(point3D.xyz)
+        # xyz.append(point3D.xyz)
+        xyzw = np.append(point3D.xyz ,1)
+        xyzw = np.dot(T, xyzw)
+        xyzw /= xyzw[3]
+        # xyz.append(point3D.xyz)
+        xyz.append(xyzw[:3])
         rgb.append(point3D.rgb / 255)
     
-    xyz = np.asarray(xyz)
-    xyz = (R @ xyz.T).T
+    # xyz = np.asarray(xyz)
+    # # xyz = (R @ xyz.T).T
+    # # xyz = np.vstack((xyz, np.tile(1, xyz.shape[0]))
+    # # xyz = xyz @ T
+    # # xyz = (xyz @ R)
 
-    # t = np.median(xyz, axis=0)
-    # xyz -= t
+    # t_tiled = np.tile(t, (xyz.shape[0],1))
+    # xyz += t_tiled
 
-    xyz = xyz.tolist()
+    # xyz = xyz.tolist()
     pcd.points = open3d.utility.Vector3dVector(xyz)
     pcd.colors = open3d.utility.Vector3dVector(rgb)
 
@@ -226,29 +239,73 @@ def add_bbox(bbox_size=5, bbox_center=np.zeros((3,))):
     pcd = open3d.geometry.PointCloud()
     xyz = np.array([[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0]], dtype=float)
     xyz *= bbox_size
-    xyz += np.tile(bbox_center, (4,1))
+    # xyz += np.tile(bbox_center, (4,1))
     rgb = np.ones((4, 3))
     pcd.points = open3d.utility.Vector3dVector(xyz.tolist())
     pcd.colors = open3d.utility.Vector3dVector(rgb.tolist())
     return pcd
 
-def visualize_image_pair(image0, image0_color, image1, image1_color, cameras, points3D, output_path, bbox_size=5, bbox_center=np.zeros((3,)), flip_image_rotations=False, user_adjust_view=False, R=np.eye(3)):
+
+# def add_bbox_around_image(image, bbox_size=5):
+#     pcd = open3d.geometry.PointCloud()
+#     print(image.qvec)
+#     xyz = np.array([[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0]], dtype=float)
+#     xyz = xyz @ qvec2rotmat(image.qvec).T
+#     xyz *= bbox_size
+#     xyz += np.tile(image.tvec, (4,1))
+#     rgb = np.ones((4, 3))
+#     pcd.points = open3d.utility.Vector3dVector(xyz.tolist())
+#     pcd.colors = open3d.utility.Vector3dVector(rgb.tolist())
+#     return pcd
+
+
+def get_model_center_of_mass(points3D):
+    xyz_list = []
+    for p3d in points3D.values():
+        xyz_list.append(p3d.xyz)
+
+    pcd = np.asarray(xyz_list)
+    return np.mean(pcd, axis=0)
+
+
+
+def visualize_image_pair(image0, image0_color, image1, image1_color, cameras, points3D, output_path, bbox_size=5, bbox_center=np.zeros((3,)), flip_image_rotations=False, user_adjust_view=False, R=np.eye(3), T=np.eye(4)):
     __vis = open3d.visualization.Visualizer()
     __vis.create_window()
 
     # Set view boundary by adding a dummy point cloud 
+    bbox_size = 3
     __vis.add_geometry(add_bbox(bbox_size, bbox_center))
+    axis = open3d.geometry.TriangleMesh.create_coordinate_frame(size=1)
+    __vis.add_geometry(axis, False)
+    # __vis.add_geometry(add_bbox_around_image(image0, bbox_size))
 
+    # rotate images to center on image0.
+    
     # Render cameras.
     frames = []
-    R_img = R.T if flip_image_rotations else R
-    frames.extend(add_image(image0, cameras, image0_color, rotation=R_img))
-    frames.extend(add_image(image1, cameras, image1_color, rotation=R_img))
+    R_img = R
+    # R_img = R.T if flip_image_rotations else R
+    # R_img = qvec2rotmat(image0.qvec).T
+    # R_img = qvec2rotmat([0, 0, 0, 1]).T
+    # R_img = (qvec2rotmat(image0.qvec) @ qvec2rotmat([0, 0, 1, 0])).T
+    # R_img = (qvec2rotmat(image0.qvec) @ qvec2rotmat([0, 0, 0, 1]) @ qvec2rotmat([0, 0, 1, 0]) @ qvec2rotmat([0.9659, 0.2588, 0, 0])).T
+    t_img = np.zeros((3,))
+    # t_img = image0.tvec
+    # t_img = (image0.tvec + [0, -3, 0]) * -1
+    frames.extend(add_image(image0, cameras, image0_color, rotation=R_img, translation=t_img))
+    frames.extend(add_image(image1, cameras, image1_color, rotation=R_img, translation=t_img))
     for i in frames:
         __vis.add_geometry(i, False)
 
     # Render model
-    __vis.add_geometry(add_points(points3D, R=R), False)
+    __vis.add_geometry(add_points(points3D, R=R_img, T=T), False)
+    # pcd = open3d.geometry.PointCloud()
+    # rgb = np.zeros((1, 3))
+    # xyz = get_model_center_of_mass(ext_points3D)
+    # pcd.points = open3d.utility.Vector3dVector(np.expand_dims(xyz, axis=0).tolist())
+    # pcd.colors = open3d.utility.Vector3dVector(rgb.tolist())
+    # __vis.add_geometry(pcd, False)
 
     __vis.poll_events()
     __vis.update_renderer()
@@ -284,11 +341,121 @@ s = s._replace(image_color_0 = image0_color)
 s = s._replace(image_color_1 = image1_color)
 
 
+def get_image_inverse_transform(img):
+    # COLMAP stores the image-to-world transform in the image data.
+    R = qvec2rotmat(img.qvec)
+    t = img.tvec
+    T = np.column_stack((R, t))
+    T = np.vstack((T, (0, 0, 0, 1)))
+    return T
+
+def get_image_world_transform(img):
+    # COLMAP stores the image-to-world transform in the image data.
+    # To get the world-to-image transform, we take the inverse.
+    T_inv = get_image_inverse_transform(img)
+    return np.linalg.inv(T_inv)
+
+def image_apply_transformation(img, T):
+    T_img = get_image_world_transform(img)
+    T_img_new = T @ T_img
+
+    # COLMAP stores the image-to-world transform in the image data.
+    T_img_new_inv = np.linalg.inv(T_img_new)
+    R_img_new = T_img_new_inv[:3, :3]
+    t_img_new = T_img_new_inv[:3, 3].squeeze()
+    return img._replace(qvec = rotmat2qvec(R_img_new), tvec = t_img_new)
+
+
+## least accurate pair (highest error) - extended model space
+img0_id = image_pairs_sorted[-1][0]
+img1_id = image_pairs_sorted[-1][1]
+img0 = ext_images[img0_id]
+img1 = ext_images[img1_id]
+
+# R0 = qvec2rotmat(img0.qvec)
+# t0 = img0.tvec
+# T0_inv = np.column_stack((R0, t0))
+# T0_inv = np.vstack((T0_inv, (0, 0, 0, 1)))
+# T0 = np.linalg.inv(T0_inv)
+# T0_new = T0_inv @ T0
+# T0_new_inv = np.linalg.inv(T0_new)
+# R0_new = T0_new_inv[:3, :3]
+# t0_new = T0_new_inv[:3, 3].squeeze()
+
+# # print(t0)
+# # print(T0)
+# # print(T0inv)
+# # exit()
+# # rot0_new = rot0.T @ rot0
+# # t0_new = rot0.T @ (t0-t0)
+# print("img0 tvec, qvec:")
+# print(img0.tvec)
+# print(img0.qvec)
+# print("#")
+# print("img1 tvec, qvec:")
+# print(img1.tvec)
+# print(img1.qvec)
+# print("###")
+
+# R1 = qvec2rotmat(img1.qvec)
+# t1 = img1.tvec
+# T1_inv = np.column_stack((R1, t1))
+# T1_inv = np.vstack((T1_inv, (0, 0, 0, 1)))
+# T1 = np.linalg.inv(T1_inv)
+# T1_new = T0_inv @ T1
+# T1_new_inv = np.linalg.inv(T1_new)
+# R1_new = T1_new_inv[:3, :3]
+# t1_new = T1_new_inv[:3, 3].squeeze()
+
+# # R1_new = (R0.T @ R1)
+# # t1_new = R0.T @ (t0-t1)
+# print("new rotations:")
+# print(R0_new)
+# print(rotmat2qvec(R0_new))
+# print(R1_new)
+# img0 = img0._replace(qvec = rotmat2qvec(R0_new), tvec = t0_new)
+# img1 = img1._replace(qvec = rotmat2qvec(R1_new), tvec = t1_new)
+# print("img0 tvec, qvec:")
+# print(img0.tvec)
+# print(img0.qvec)
+# print("#")
+# print("img1 tvec, qvec:")
+# print(img1.tvec)
+# print(img1.qvec)
+# print("###")
+
+T0_inv = get_image_inverse_transform(img0)
+T0 = get_image_world_transform(img0)
+img0 = image_apply_transformation(img0, T0_inv)
+img1 = image_apply_transformation(img1, T0_inv)
+
+s = s._replace(ornt_img_high_0_0 = os.path.join(extended_images_path_absolute, img0.name))
+s = s._replace(ornt_img_high_0_1 = os.path.join(extended_images_path_absolute, img1.name))
+s = s._replace(ornt_high_0_error = image_pairs_sorted[-1][2])
+vis_path = f"{pair_visualizations_path}/high_0_extended.png"
+visualize_image_pair(img0, image0_color, img1, image1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, R=R_ext, T=T0_inv)
+s = s._replace(ornt_vis_high_0_ext = vis_path)
+## reference model space
+img0 = ref_images[ext2ref_id_map[img0_id]]
+img1 = ref_images[ext2ref_id_map[img1_id]]
+vis_path = f"{pair_visualizations_path}/high_0_reference.png"
+visualize_image_pair(img0, image0_color, img1, image1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, flip_image_rotations=True, bbox_center=bbox_center_ref, R=R_ref)
+s = s._replace(ornt_vis_high_0_ref = vis_path)
+
+exit()
+
 ## most accurate pair (lowest error) - extended model space
 img0_id = image_pairs_sorted[0][0]
 img1_id = image_pairs_sorted[0][1]
 img0 = ext_images[img0_id]
 img1 = ext_images[img1_id]
+
+# print(img0.tvec)
+# print(img0.qvec)
+# exit()
+# print(img1.tvec)
+# get_model_center_of_mass(ext_points3D)
+
 s = s._replace(ornt_img_low_0_0 = os.path.join(extended_images_path_absolute, img0.name))
 s = s._replace(ornt_img_low_0_1 = os.path.join(extended_images_path_absolute, img1.name))
 s = s._replace(ornt_low_0_error = image_pairs_sorted[0][2])
