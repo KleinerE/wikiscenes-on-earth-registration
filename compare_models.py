@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm 
 from colmap_python_utils.read_write_model import read_model, qvec2rotmat
 from model_visualization import create_transform, determine_image_pair_best_image, get_image_inverse_transform, render_image_pair
-
+from output_model_score_html import CompareScoresheetData, create_compare_sheet
 
 
 parser = argparse.ArgumentParser(description='')
@@ -58,12 +58,18 @@ print(f"Done - {len(images_1)} images  ,  {len(points3D_1)} points, overall scor
 
 comparison_output_path = f"{args.model_0_root}/compare"
 visualizations_path = f"{comparison_output_path}/visualizations"
+visualizations_path_absolute = os.path.abspath(visualizations_path)
 if os.path.exists(comparison_output_path):
     shutil.rmtree(comparison_output_path)
 if not os.path.exists(comparison_output_path):
     os.makedirs(comparison_output_path)
     os.makedirs(visualizations_path)
     
+with open(f"{comparison_output_path}/args.txt", "w") as f:
+    f.write(f"model_0_root: {args.model_0_root}\n")
+    f.write(f"model_1_root: {args.model_1_root}\n")
+    
+print(f"Finding matching pairs...")
 tup_pairs = []
 image_pairs_0 = []
 image_pairs_1 = []
@@ -75,6 +81,8 @@ for err_0, id0_0, id1_0 in model_0_orientation_errors:
             image_pairs_1.append((err_1, id0_1, id1_1))
             tup_pairs.append(((err_0, id0_0, id1_0),(err_1, id0_1, id1_1)))
             break
+
+print(f"Done - {len(tup_pairs)} matches found.")
 
 # image_pairs_0_sorted = sorted(image_pairs_0, key=lambda item: item[0])
 # image_pairs_1_sorted = sorted(image_pairs_1, key=lambda item: item[0])
@@ -88,6 +96,8 @@ pair1_highest = tup_pairs_sorted_err_1[-1]
 
 # Visualize.
 ## visualization consts
+print(f"Creating visualizations and scoresheet...")
+
 uva=False
 
 bbox_center_ref = np.array([2,2,0])
@@ -99,10 +109,11 @@ R_view = qvec2rotmat([-0.258819, 0.9659258, 0, 0])
 t_view = ([0, -1.5, 4])
 T_view = create_transform(R_view, t_view)
 
-# s = ScoresheetData()
-# s.orientation_score = mean(image_errs_avg.values())
-# s.image_color_0 = image0_color
-# s.image_color_1 = image1_color
+s = CompareScoresheetData()
+s.orientation_score_0 = model_0_orientation_score_overall
+s.orientation_score_1 = model_1_orientation_score_overall
+s.image_color_0 = image0_color
+s.image_color_1 = image1_color
 
 
 def create_image_pair_visualizations(tup_pair, img0_color, img1_color, name, T_view, user_view_adjust=False):
@@ -112,26 +123,26 @@ def create_image_pair_visualizations(tup_pair, img0_color, img1_color, name, T_v
     img1_1 = images_1[tup_pair[1][2]]
     chosen_idx = determine_image_pair_best_image(img0_0, img1_0, points3D_0, img0_1, img1_1, points3D_1)
     
-    # setattr(s, f"ornt_img_{name}_0", os.path.join(extended_images_path_absolute, ext_img0.name))
-    # setattr(s, f"ornt_img_{name}_1", os.path.join(extended_images_path_absolute, ext_img1.name))
-    # setattr(s, f"ornt_{name}_error0",tup_pair[0][0])
-    # setattr(s, f"ornt_{name}_error1",tup_pair[1][0])
+    setattr(s, f"ornt_img_{name}_0", os.path.join(model_0_images_absolute, img0_0.name))
+    setattr(s, f"ornt_img_{name}_1", os.path.join(model_0_images_absolute, img1_0.name))
+    setattr(s, f"ornt_{name}_error0",tup_pair[0][0])
+    setattr(s, f"ornt_{name}_error1",tup_pair[1][0])
 
     # extended model space
     T_chosen_img_inv = get_image_inverse_transform(img1_0) if chosen_idx == 1 else get_image_inverse_transform(img0_0)
     T_scene = T_view @ T_chosen_img_inv
 
-    vis_path = f"{visualizations_path}/{name}_0.png"
+    vis_path = f"{visualizations_path_absolute}/{name}_0.png"
     render_image_pair(img0_0, img0_color, img1_0, img1_color, cameras_0, points3D_0, vis_path, user_adjust_view=uva, T=T_scene)
-    # setattr(s, f"ornt_vis_{name}_0", vis_path)
+    setattr(s, f"ornt_vis_{name}_0", vis_path)
 
     ## reference model space
     T_chosen_img_inv = get_image_inverse_transform(img1_1) if chosen_idx == 1 else get_image_inverse_transform(img0_1)
     T_scene = T_view @ T_chosen_img_inv
 
-    vis_path = f"{visualizations_path}/{name}_1.png"
+    vis_path = f"{visualizations_path_absolute}/{name}_1.png"
     render_image_pair(img0_1, img0_color, img1_1, img1_color, cameras_1, points3D_1, vis_path, user_adjust_view=uva, T=T_scene)
-    # setattr(s, f"ornt_vis_{name}_1", vis_path)
+    setattr(s, f"ornt_vis_{name}_1", vis_path)
 
 
 ## most accurate pair (lowest error)
@@ -139,3 +150,5 @@ create_image_pair_visualizations(pair0_lowest, image0_color, image1_color, "low_
 create_image_pair_visualizations(pair1_lowest, image0_color, image1_color, "low_1", T_view, user_view_adjust=uva)
 create_image_pair_visualizations(pair0_highest, image0_color, image1_color, "high_0", T_view, user_view_adjust=uva)
 create_image_pair_visualizations(pair1_highest, image0_color, image1_color, "high_1", T_view, user_view_adjust=uva)
+
+create_compare_sheet(s, comparison_output_path)
