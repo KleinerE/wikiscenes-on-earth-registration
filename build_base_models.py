@@ -2,7 +2,7 @@ import os
 import subprocess
 import datetime
 
-colmap_path = r"C:\Projects\WikiScenes\COLMAP-3.8-windows-cuda\COLMAP.bat"
+colmap_path = r"D:\Projects\WikiScenes\COLMAP-3.8-windows-no-cuda\COLMAP.bat"
 
 def build_base_model(images_base_path, models_base_path, category_index):
 

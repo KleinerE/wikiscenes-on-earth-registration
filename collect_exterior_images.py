@@ -10,8 +10,8 @@ import shutil
 
 def extract_for_category(category_index):
 
-    base_dir = f".\Wikiscenes1200px\cathedrals\{category_index}"
-    output_dir = f"reference_models\cathedrals\{category_index}\images"
+    base_dir = f".\Data\Wikiscenes1200px\cathedrals\{category_index}"
+    output_dir = f".\Data\Wikiscenes_exterior_images\cathedrals\{category_index}\images"
 
 
     if not os.path.exists(output_dir):
@@ -70,9 +70,14 @@ def extract_for_category(category_index):
         for f in skipped:
             print(f)
     
+    if collected == 0:
+        cat_dir = os.path.dirname(output_dir)
+        os.rmdir(output_dir)
+        os.rmdir(cat_dir)
+
     return collected, skipped
 
-wikiscenes_base_path = ".\Wikiscenes1200px\cathedrals"
+wikiscenes_base_path = ".\Data\Wikiscenes1200px\cathedrals"
 
 extract_stats = {}
 for entry in os.scandir(wikiscenes_base_path):
@@ -82,7 +87,7 @@ for entry in os.scandir(wikiscenes_base_path):
         collected, skipped = extract_for_category(category_num)
         extract_stats[category_num] = (collected, len(skipped))    
 
-stats_out_path = "reference_models\cathedrals\collect_stats.json"
+stats_out_path = ".\Data\Wikiscenes_exterior_images\cathedrals\collect_stats.json"
 with open(stats_out_path, "w") as outfile:
     json.dump(extract_stats, outfile, indent=4)
     print(f"Stats saved to: {stats_out_path}")
