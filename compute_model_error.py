@@ -3,22 +3,31 @@ import argparse
 import numpy as np
 import json
 import itertools
+import shutil
 from tqdm import tqdm
 from statistics import mean, median, mode, stdev
 from colmap_python_utils.read_write_model import read_model, Image, qvec2rotmat, rotmat2qvec, read_images_binary
 from output_model_score_html import ScoresheetData, create_scoresheet
+from model_score_helpers import geodesic_error
+from model_visualization import create_transform, determine_image_pair_best_image, get_image_inverse_transform, render_image_pair
 
-parser = argparse.ArgumentParser(description='construct indexes for comparing extended model to reference models.')
+parser = argparse.ArgumentParser(description='')
 parser.add_argument('category_index')
 parser.add_argument('component_index')
+parser.add_argument('--user-view-adjust', nargs='?', default=False, const=True)
 args = parser.parse_args()
 
+# Load models.
 print(f"Importing extended model...")
-extended_model_path = f"extended_models/cathedrals/{args.category_index}/sparse/0"
+extended_model_root = f"extended_models/cathedrals/{args.category_index}_vocabtree"
+extended_model_path = f"{extended_model_root}/sparse/0"
 extended_images_path = f"extended_models/cathedrals/{args.category_index}/images/"
 extended_images_path_absolute = os.path.abspath(extended_images_path)
+extended_model_root_absolute = os.path.abspath(extended_model_root)
+extended_model_output_root = f"{extended_model_root}/score"
+pair_visualizations_path = f"{extended_model_output_root}/image_pair_vis/"
 ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
-with open(f"extended_models/cathedrals/{args.category_index}/images_new_names.json", 'r') as imgnamesfile:
+with open(f"{extended_model_root}/images_new_names.json", 'r') as imgnamesfile:
     ext_img_orig_names = json.load(imgnamesfile)
 print(f"Done - {len(ext_images)} images  ,  {len(ext_points3D)} points")
 
@@ -27,85 +36,47 @@ reference_model_path = f"WikiScenes3D/{args.category_index}/{args.component_inde
 ref_cameras, ref_images, ref_points3D = read_model(reference_model_path, ext='.txt')
 print(f"Done - {len(ref_images)} images  ,  {len(ref_points3D)} points")
 
-# ext_images = read_images_binary(f"toy_models/images_0.bin")
-# ref_images = read_images_binary(f"toy_models/images_1.bin")
+if os.path.exists(extended_model_output_root):
+    shutil.rmtree(extended_model_output_root)
+if not os.path.exists(extended_model_output_root):
+    os.makedirs(extended_model_output_root)
+    os.makedirs(pair_visualizations_path)
 
-# Find image pairs
-image_id_pairs = {}
+# def analyze_orientation_errors()
+# Build a mapping between extended model image ID to reference model image ID.
+ext2ref_id_map = {}
 for ext_img_id in ext_images:
     ext_img_new_name = ext_images[ext_img_id].name
     if ext_img_new_name in ext_img_orig_names:
         ext_img_orig_name = ext_img_orig_names[ext_img_new_name]
-    # ext_img_orig_name = ext_img_new_name
         for ref_img_id in ref_images:
             ref_img_name = ref_images[ref_img_id].name.split('/')[-1] # WikiScenes3D image names have a 'full' relative path instead of just the image name.
             if(ref_img_name == ext_img_orig_name):
-                image_id_pairs[ext_img_id] = ref_img_id
+                ext2ref_id_map[ext_img_id] = ref_img_id
 
-print(f"\nModels have {len(image_id_pairs)} common images.")
+print(f"\nModels have {len(ext2ref_id_map)} common images.")
 
-if(len(image_id_pairs) == 0):
+if(len(ext2ref_id_map) == 0):
     exit()
 
 print("\n Computing image orientation error")
 
-### Go over pairs (of pairs) and calculate delta rotations
+# Go over pairs of images and calculate delta rotations
 
-# get all possible pairs of pairs
-ext_img_id_pairs = list(itertools.combinations(image_id_pairs.keys(), 2))
-ref_img_id_pairs = list(itertools.combinations(image_id_pairs.values(), 2))
+## get all possible pairs of images
+ext_img_id_pairs = list(itertools.combinations(ext2ref_id_map.keys(), 2))
+# ref_img_id_pairs = list(itertools.combinations(ext2ref_id_map.values(), 2))
 
-# print(ext_img_id_pairs)
-def qvec_conjugate(qvec):
-    return np.array([qvec[0], -1 * qvec[1], -1 * qvec[2], -1 * qvec[3]])
-
-def qvec_norm(qvec):
-    return np.dot(qvec, qvec_conjugate(qvec))
-
-def qvec_inverse(qvec):
-    return qvec_conjugate(qvec) * (1/np.linalg.norm(qvec))
-
-def quaternion_multiply(quaternion1, quaternion0):
-    w0, x0, y0, z0 = quaternion0
-    w1, x1, y1, z1 = quaternion1
-    return np.array([-x1 * x0 - y1 * y0 - z1 * z0 + w1 * w0,
-                     x1 * w0 + y1 * z0 - z1 * y0 + w1 * x0,
-                     -x1 * z0 + y1 * w0 + z1 * x0 + w1 * y0,
-                     x1 * y0 - y1 * x0 + z1 * w0 + w1 * z0], dtype=np.float64)
-
-def quaternion_angle(qvec):
-    w = qvec[0]
-    if w >= 1:
-        w -= np.finfo(float).eps
-    elif w <= -1:
-        w += np.finfo(float).eps
-    
-    w = np.clip(w, -1, 1)
-        
-    # if np.isnan(np.arccos(w)):
-    #     print(qvec)
-    return 2 * np.arccos(w)
-
-def clamp_angle(a):
-    if a > np.pi:
-        a -= 2 * np.pi
-    elif a < - np.pi:
-        a += 2 * np.pi
-    return a
-
-def geodesic_error(R1, R2):
-    return np.arccos(0.5 * (np.trace(R1.T @ R2) - 1))
-
-err_angles = []
-err_angles_w_images = []
-image_errs = {}
+err_angles = [] # list of all orientation errors (one for each image pair)
+err_angles_w_images = [] # list of tuples - (id0, id1, error)
+image_errs = {} # mapping of <image id> -> <list of all relevant errors>. will be used to determine most and least accurate images.
 
 for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
     # extract qvecs
     ext_img_0_qvec = ext_images[ext_img_id_0].qvec
     ext_img_1_qvec = ext_images[ext_img_id_1].qvec
-    ref_img_id_0 = image_id_pairs[ext_img_id_0]
-    ref_img_id_1 = image_id_pairs[ext_img_id_1]
+    ref_img_id_0 = ext2ref_id_map[ext_img_id_0]
+    ref_img_id_1 = ext2ref_id_map[ext_img_id_1]
     ref_img_0_qvec = ref_images[ref_img_id_0].qvec
     ref_img_1_qvec = ref_images[ref_img_id_1].qvec
 
@@ -118,65 +89,130 @@ for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
     R_ext_to_ref_0 = qvec2rotmat(ref_img_0_qvec) @ np.linalg.inv(qvec2rotmat(ext_img_0_qvec))
     # Apply this rotation to the extension image 1 to obtain the hypothesized reference image 1 orientation.
     ref_1_eval = delta_R_ext @ R_ext_to_ref_0 @ qvec2rotmat(ext_img_0_qvec)
-
-    # error = geodesic_error(delta_R_ext, delta_R_ref)
     # The error is the geodesic distance between this hypothesis and 'ground truth' (the actual reference image 1 orientation)
     error = geodesic_error(qvec2rotmat(ref_img_1_qvec), ref_1_eval)
 
     err_angles.append(error)
-    err_angles_w_images.append((ext_images[ext_img_id_0].name, ext_images[ext_img_id_1].name, error))
+    # err_angles_w_images.append((ext_images[ext_img_id_0].name, ext_images[ext_img_id_1].name, error))
+    err_angles_w_images.append((ext_img_id_0, ext_img_id_1, error))
     if ext_images[ext_img_id_0].name not in image_errs:
         image_errs[ext_images[ext_img_id_0].name] = []
     image_errs[ext_images[ext_img_id_0].name].append(error)
     if ext_images[ext_img_id_1].name not in image_errs:
         image_errs[ext_images[ext_img_id_1].name] = []
     image_errs[ext_images[ext_img_id_1].name].append(error)
-    # err_angles.append(angle_ext - angle_ref)
 
-
-# print(f"number of pairs: {len(err_angles)}")
-# print(f"min angle error: {min(err_angles)}")
-# print(f"max angle error: {max(err_angles)}")
-# print(f"avg angle error: {mean(err_angles)}")
-# print(f"median angle error: {median(err_angles)}")
-# print(f"mode angle error: {mode(err_angles)}")
-image_errs_avg = {}
+image_errs_avg = {} # mapping of <image id> -> <median error value>
 for k, v in image_errs.items():
     image_errs_avg[k] = median(v)
 
+## sort images by median error -> most accurate images are at the top. 
 image_errs_avg_sorted = dict(sorted(image_errs_avg.items(), key=lambda item: item[1]))
 
-with open("test.txt", 'w') as f:
-    f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in err_angles_w_images))
-
-with open("test1.json", 'w') as f:
-    f.write(json.dumps(image_errs_avg_sorted, indent=2))
-
-print(mean(image_errs_avg.values()))
-
+## sort tuples by error -> most accurate image pair is at the top and least accurate pair is at the bottom.
 image_pairs_sorted = sorted(err_angles_w_images, key=lambda item: item[2])
-with open("test_sorted.txt", 'w') as f:
-    f.write('\n'.join('{} -> {}, {}'.format(x[2],x[0],x[1]) for x in image_pairs_sorted))
 
-# Create data for scoresheet
+## finally - the orientation score is simply the mean image orientation error (across all common images).
+print(f"orientation score: {mean(image_errs_avg.values())}")
+
+orientation_errors_out_path = f"{extended_model_output_root}/orientation_errors.txt"
+with open(orientation_errors_out_path, 'w') as f:
+    f.write(f"{mean(image_errs_avg.values())}\n")
+    f.write('\n'.join('{},{},{}'.format(x[2],x[0],x[1]) for x in image_pairs_sorted))
+
+print(f"wrote orientation errors to: {orientation_errors_out_path}")
+
+exit()
+
+
+# Visualize.
+## visualization consts
+uva=args.user_view_adjust
+
+bbox_center_ref = np.array([2,2,0])
+image0_color = [0.2, 0.9, 0.6]
+image1_color = [0.6, 0.6, 0.2]
+
+# "view" transform relative to chosen image - rotate along x axis by 210 degrees and move forwards & upwards.
+R_view = qvec2rotmat([-0.258819, 0.9659258, 0, 0])
+t_view = ([0, -1.5, 4])
+T_view = create_transform(R_view, t_view)
+
 s = ScoresheetData()
-s = s._replace(orientation_score = mean(image_errs_avg.values()))
+s.orientation_score = mean(image_errs_avg.values())
+s.image_color_0 = image0_color
+s.image_color_1 = image1_color
 
-s = s._replace(ornt_img_low_0_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[0][0]))
-s = s._replace(ornt_img_low_0_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[0][1]))
-s = s._replace(ornt_img_low_1_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[1][0]))
-s = s._replace(ornt_img_low_1_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[1][1]))
-s = s._replace(ornt_img_low_2_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[2][0]))
-s = s._replace(ornt_img_low_2_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[2][1]))
 
-s = s._replace(ornt_img_high_0_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-1][0]))
-s = s._replace(ornt_img_high_0_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-1][1]))
-s = s._replace(ornt_img_high_1_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-2][0]))
-s = s._replace(ornt_img_high_1_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-2][1]))
-s = s._replace(ornt_img_high_2_0 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-3][0]))
-s = s._replace(ornt_img_high_2_1 = os.path.join(extended_images_path_absolute, image_pairs_sorted[-3][1]))
+def create_image_pair_visualizations(img0_id, img1_id, error, img0_color, img1_color, name, T_view, user_view_adjust=False):
+    ext_img0 = ext_images[img0_id]
+    ext_img1 = ext_images[img1_id]
+    ref_img0 = ref_images[ext2ref_id_map[img0_id]]
+    ref_img1 = ref_images[ext2ref_id_map[img1_id]]
+    chosen_idx = determine_image_pair_best_image(ext_img0, ext_img1, ext_points3D, ref_img0, ref_img1, ref_points3D)
 
-create_scoresheet(s, extended_model_path)
+    setattr(s, f"ornt_img_{name}_0", os.path.join(extended_images_path_absolute, ext_img0.name))
+    setattr(s, f"ornt_img_{name}_1", os.path.join(extended_images_path_absolute, ext_img1.name))
+    setattr(s, f"ornt_{name}_error",error)
+
+    # extended model space
+    T_chosen_img_inv = get_image_inverse_transform(ext_img1) if chosen_idx == 1 else get_image_inverse_transform(ext_img0)
+    T_scene = T_view @ T_chosen_img_inv
+
+    vis_path = f"{pair_visualizations_path}/{name}_extended.png"
+    render_image_pair(ext_img0, img0_color, ext_img1, img1_color, ext_cameras, ext_points3D, vis_path, user_adjust_view=uva, T=T_scene)
+    setattr(s, f"ornt_vis_{name}_ext", vis_path)
+
+    ## reference model space
+    T_chosen_img_inv = get_image_inverse_transform(ref_img1) if chosen_idx == 1 else get_image_inverse_transform(ref_img0)
+    T_scene = T_view @ T_chosen_img_inv
+
+    vis_path = f"{pair_visualizations_path}/{name}_reference.png"
+    render_image_pair(ref_img0, img0_color, ref_img1, img1_color, ref_cameras, ref_points3D, vis_path, user_adjust_view=uva, T=T_scene)
+    setattr(s, f"ornt_vis_{name}_ref", vis_path)
+
+
+## most accurate pair (lowest error)
+img0_id = image_pairs_sorted[0][0]
+img1_id = image_pairs_sorted[0][1]
+error = image_pairs_sorted[0][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "low_0", T_view, user_view_adjust=uva)
+
+## 2nd accurate pair
+img0_id = image_pairs_sorted[1][0]
+img1_id = image_pairs_sorted[1][1]
+error = image_pairs_sorted[1][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "low_1", T_view, user_view_adjust=uva)
+
+## 3rd accurate pair
+img0_id = image_pairs_sorted[2][0]
+img1_id = image_pairs_sorted[2][1]
+error = image_pairs_sorted[2][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "low_2", T_view, user_view_adjust=uva)
+
+## least accurate pair (highest error)
+img0_id = image_pairs_sorted[-1][0]
+img1_id = image_pairs_sorted[-1][1]
+error = image_pairs_sorted[-1][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "high_0", T_view, user_view_adjust=uva)
+
+## 2nd least accurate pair
+img0_id = image_pairs_sorted[-2][0]
+img1_id = image_pairs_sorted[-2][1]
+error = image_pairs_sorted[-2][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "high_1", T_view, user_view_adjust=uva)
+
+## 3rd least accurate pair
+img0_id = image_pairs_sorted[-3][0]
+img1_id = image_pairs_sorted[-3][1]
+error = image_pairs_sorted[-3][2]
+create_image_pair_visualizations(img0_id, img1_id, error, image0_color, image1_color, "high_2", T_view, user_view_adjust=uva)
+
+
+create_scoresheet(s, extended_model_output_root)
+
+exit()
+
 
 # Relevant links:
 #   - http://stackoverflow.com/a/32244818/263061 (solution with scale)
@@ -216,14 +252,14 @@ def umeyama(P, Q):
     return c, R, t
 
 
-def compute_alignment(ext_images, ref_images, image_id_pairs):
+def compute_alignment(ext_images, ref_images, ext2ref_id_map):
     xyz_a_list = []
     xyz_b_list = []
-    for ext_img_id, ref_img_id in image_id_pairs.items():
+    for ext_img_id, ref_img_id in ext2ref_id_map.items():
         xyz_a_list.append(ext_images[ext_img_id].tvec)
         xyz_b_list.append(ref_images[ref_img_id].tvec)
 
-    if(len(image_id_pairs) < 3):
+    if(len(ext2ref_id_map) < 3):
         return -1, 0, 0
 
     pc_a = np.asarray(xyz_a_list)
@@ -240,7 +276,7 @@ def compute_alignment(ext_images, ref_images, image_id_pairs):
     return c, R, t
 
 print("\n Computing image position error")
-compute_alignment(ext_images, ref_images, image_id_pairs)
+compute_alignment(ext_images, ref_images, ext2ref_id_map)
 
 
 
@@ -250,143 +286,3 @@ import matplotlib.pyplot as plt
 # sns.kdeplot(np.array(err_angles), bw_adjust=0.05)
 sns.displot(np.array(err_angles))
 plt.show()
-
-
-
-
-exit()
-
-
-
-
-
-
-for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
-    # extract qvecs
-    ext_img_0_qvec = ext_images[ext_img_id_0].qvec
-    ext_img_1_qvec = ext_images[ext_img_id_1].qvec
-    ref_img_id_0 = image_id_pairs[ext_img_id_0]
-    ref_img_id_1 = image_id_pairs[ext_img_id_1]
-    ref_img_0_qvec = ref_images[ref_img_id_0].qvec
-    ref_img_1_qvec = ref_images[ref_img_id_1].qvec
-
-    # Compute the delta rotation from image 0 to image 1, in extended model.
-    delta_R_ext = quaternion_multiply(ext_img_1_qvec, qvec_inverse(ext_img_0_qvec))
-    # Apply the same rotation to image 0 from reference model.
-    ref_0_proj_qvec = quaternion_multiply(delta_R_ext , ref_img_0_qvec)
-    # Compute the rotation error between this projection and the actual reference image 1 orientation.
-    ref_rotation_err = quaternion_multiply(ref_img_1_qvec, qvec_inverse(ref_0_proj_qvec))
-
-    w = ref_rotation_err[0]
-    if w >= 1:
-        w -= np.finfo(float).eps
-    elif w <= -1:
-        w += np.finfo(float).eps
-    
-    err_angle = 2 * np.arccos(w)
-    # if np.isnan(err_angle):
-    #     print(ref_rotation_err)
-    #     print(w)
-    err_angles.append(err_angle)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# print((ext_images[1531].qvec2rotmat()))
-avg_angle_errors = []
-
-for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
-    ext_img_0_qvec = ext_images[ext_img_id_0].qvec
-    ext_img_1_qvec = ext_images[ext_img_id_1].qvec
-    ref_img_id_0 = image_id_pairs[ext_img_id_0]
-    ref_img_id_1 = image_id_pairs[ext_img_id_1]
-    ref_img_0_qvec = ref_images[ref_img_id_0].qvec
-    ref_img_1_qvec = ref_images[ref_img_id_1].qvec
-
-    # Compute the delta rotation from image 0 to image 1, in extended moel and in reference model.
-    # delta_R_ext = ext_img_1_qvec.reshape(-1,1).dot(qvec_inverse(ext_img_0_qvec).reshape(-1,1).T)
-    delta_R_ext = quaternion_multiply(ext_img_1_qvec, qvec_inverse(ext_img_0_qvec))
-    # print("AAAAA")
-    # print(ext_img_id_0)
-    # print(ext_img_id_1)
-    # print(ext_img_1_qvec)
-    # print(qvec_inverse(ext_img_0_qvec))
-    # print(delta_R_ext)
-    # Not sure if needed
-    # delta_q_ext = rotmat2qvec(delta_R_ext[0:3, 0:3])
-    # delta_R_ref = ref_img_1_qvec.reshape(-1,1) * qvec_inverse(ref_img_0_qvec).reshape(-1,1).T
-    # delta_q_ref = rotmat2qvec(delta_R_ref[0:3, 0:3])
-
-    # Project reference image 0 with the extended model delta rotation
-    # ref_0_proj_qvec = np.matmul(delta_R_ext , ref_img_0_qvec.reshape(-1,1))
-    ref_0_proj_qvec = quaternion_multiply(delta_R_ext , ref_img_0_qvec)
-    # print(ref_0_proj_qvec)
-
-    # Calculate the correction term needed to reach the true image 1. (This is another rotation matrix)
-    # R_ref_proj_correction = ref_img_1_qvec.reshape(-1,1) * qvec_inverse(ref_0_proj_qvec.squeeze()).reshape(-1,1).T
-    model_rotation_hyp = quaternion_multiply(ref_img_1_qvec, qvec_inverse(ref_0_proj_qvec))
-    # print("BBBBBBBBBBBBB")
-    # print(ext_img_id_0)
-    # print(ext_img_id_1)
-    # print(R_ref_proj_correction)
-    # print(ref_0_proj_qvec.squeeze())
-    # print(qvec_conjugate(ref_0_proj_qvec.squeeze()))
-    # print(qvec_inverse(ref_0_proj_qvec.squeeze()))
-    # print(np.linalg.norm(ref_0_proj_qvec.squeeze()))
-
-    # now, to measure the error, we project each reference model image along the two rotations, and calculate the rotation error.
-    test_delta_angles = []
-    for test_ext_img_id_0, test_ext_img_id_1 in ext_img_id_pairs:
-        if test_ext_img_id_0 != ext_img_id_0 and test_ext_img_id_1 != ext_img_id_1:
-            test_ref_img_id_0 = image_id_pairs[test_ext_img_id_0]
-            test_ref_img_id_1 = image_id_pairs[test_ext_img_id_1]
-            test_ref_img_0_qvec = ref_images[test_ref_img_id_0].qvec
-            test_ref_img_1_qvec = ref_images[test_ref_img_id_1].qvec
-
-            # Project image 0 along the proposed rotations.            
-            # test_ref_img_0_proj_qvec = R_ref_proj_correction.dot(delta_R_ext.dot(test_ref_img_0_qvec))
-            test_ref_img_0_proj_qvec = quaternion_multiply(model_rotation_hyp, quaternion_multiply(delta_R_ext, test_ref_img_0_qvec))
-            # print(test_ref_img_0_proj_qvec)
-            # Calculate the delta rotation between the result and actual image 1.
-            # test_delta_R = test_ref_img_1_qvec.reshape(-1,1) * qvec_inverse(test_ref_img_0_proj_qvec).reshape(-1,1).T            
-            # test_delta_qvec = rotmat2qvec(test_delta_R[0:3, 0:3])
-            test_delta_qvec = quaternion_multiply(test_ref_img_1_qvec, qvec_inverse(test_ref_img_0_proj_qvec))      
-            w = test_delta_qvec[0]
-            if w >= 1:
-                w -= np.finfo(float).eps
-            elif w <= -1:
-                w += np.finfo(float).eps
-            # test_delta_angle = 2 * np.arccos(test_delta_qvec[0])
-            test_delta_angle = 2 * np.arccos(w)
-            test_delta_angles.append(test_delta_angle)
-
-    avg_angle_errors.append(mean(test_delta_angles))
-    # print(test_delta_angles)
-
-print(min(avg_angle_errors))
-print(max(avg_angle_errors))
-print(mean(avg_angle_errors))
-
