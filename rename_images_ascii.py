@@ -24,7 +24,10 @@ def rename_category_images(category_images_root_path):
         extension = filename.split(".")[-1]
         new_filename = f"ext_img_{idx:05d}.{extension}"
         renames_dict[new_filename] = filename
-        shutil.copy2(os.path.join(images_input_dir, filename), os.path.join(images_output_dir, new_filename))
+        source_path = "\\\\?\\" + os.path.abspath(os.path.join(images_input_dir, filename))
+        target_path = "\\\\?\\" + os.path.abspath(os.path.join(images_output_dir, new_filename))
+        # shutil.copy2(os.path.join(images_input_dir, filename), os.path.join(images_output_dir, new_filename))
+        shutil.copy2(source_path, target_path)
         # os.rename(os.path.join(images_dir, filename), os.path.join(images_dir, new_filename))
         idx += 1
 

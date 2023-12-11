@@ -1,13 +1,16 @@
 param([Int32]$category_index) 
 
-$base_images_path = ".\StudioRenders\cathedrals\$category_index\images\"
-$base_root_path = ".\base_models\cathedrals\$category_index"
+# $base_images_path = ".\StudioRenders\cathedrals\$category_index\images\"
+$base_images_path = "..\Data\StudioRenders\cathedrals\$category_index\images\"
+# $base_root_path = "..\..\Wikiscenes\base_models\cathedrals\$category_index"
+$base_root_path = "..\Models\Base\cathedrals\$category_index"
 
 $base_database_path = "$base_root_path\database.db"
 $base_sparse_model_path = "$base_root_path\sparse\0\"
 
-$extended_root_path = ".\extended_models\cathedrals\$category_index"
+$extended_root_path = "..\Models\extended_test\cathedrals\$category_index"
 $extended_images_path = "$extended_root_path\images\"
+# $extended_images_path = "..\Data\Wikiscenes_exterior_images\cathedrals\$category_index\images_renamed\"
 $extended_images_list_path = "$extended_root_path\images.txt"
 $extended_database_path = "$extended_root_path\database.db"
 $extended_sparse_output_path = "$extended_root_path\sparse\0\"
@@ -40,7 +43,7 @@ Start-Process -FilePath $colmap -argumentList $arguments -NoNewWindow -Wait -Red
 
 "Matching features..."
 # $arguments = 'exhaustive_matcher', "--database_path $extended_database_path", '--SiftMatching.min_num_inliers 5'#, --SiftMatching.guided_matching 1'
-$arguments = 'vocab_tree_matcher', "--database_path $extended_database_path", '--SiftMatching.min_num_inliers 5', "--VocabTreeMatching.vocab_tree_path $base_root_path\vocab_tree_flickr100K_words32K.bin"
+$arguments = 'vocab_tree_matcher', "--database_path $extended_database_path", '--SiftMatching.min_num_inliers 5', "--VocabTreeMatching.vocab_tree_path ..\Data\vocab_tree_flickr100K_words32K.bin"
 Start-Process -FilePath $colmap -argumentList $arguments -NoNewWindow -Wait -RedirectStandardOutput $log_path -RedirectStandardError $log_error_path
 "Done."
 

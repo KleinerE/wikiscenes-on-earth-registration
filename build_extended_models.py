@@ -4,9 +4,9 @@ import subprocess
 import datetime
 import codecs
 
-colmap_path = r"D:\Projects\WikiScenes\COLMAP-3.8-windows-no-cuda\COLMAP.bat"
+colmap_path = r"C:\Projects\Uni\WikiScenes-prod\COLMAP-3.8-windows-cuda\COLMAP.bat"
 
-def build_extended_model(base_models_directory, extended_models_directory, extended_images_path, category_index):
+def build_extended_model(base_models_directory, extended_models_directory, extended_images_path, category_index, vocab_tree_path=''):
 
     if not os.path.isfile(colmap_path):
         print(f"COLMAP not found in path: {colmap_path}. Aborting")
@@ -15,7 +15,7 @@ def build_extended_model(base_models_directory, extended_models_directory, exten
     base_root_path = f"{base_models_directory}\{category_index}"
     if not os.path.exists(base_root_path):
         print(f"No base model found for category {category_index}")
-        return
+        return False
 
     extended_root_path = f"{extended_models_directory}\{category_index}"
     if not os.path.exists(extended_root_path):
@@ -25,7 +25,10 @@ def build_extended_model(base_models_directory, extended_models_directory, exten
     base_sparse_model_path = f"{base_root_path}\sparse\\0"
     
     extended_database_path = f"{extended_root_path}\database.db"
-    extended_sparse_model_path = f"{base_root_path}\sparse\\0"
+    extended_sparse_model_path = f"{extended_root_path}\sparse\\0"
+    if os.path.exists(extended_sparse_model_path):
+        print(f"extended model already exists at path: {extended_sparse_model_path}. Skipping")
+        return False
     if not os.path.exists(extended_sparse_model_path):
         os.makedirs(extended_sparse_model_path)
     
@@ -43,19 +46,33 @@ def build_extended_model(base_models_directory, extended_models_directory, exten
     feature_extractor_args = [colmap_path, "feature_extractor",
                     "--database_path", extended_database_path,
                     "--image_path", extended_images_path,
-                    "--image_list_path", extended_images_list_path,
-                    "--SiftExtraction.use_gpu", "false"]
+                    "--image_list_path", extended_images_list_path]
 
-    matcher_args = [colmap_path, "exhaustive_matcher",
+    # matcher_args = [colmap_path, "exhaustive_matcher",
+    #                 "--database_path", extended_database_path,
+    #                 "--SiftMatching.min_num_inliers", str(5)]
+
+    matcher_args = [colmap_path, "vocab_tree_matcher",
                     "--database_path", extended_database_path,
-                    "--SiftMatching.min_num_inliers", str(5),
-                    "--SiftMatching.use_gpu", "false"]
+                    "--SiftMatching.min_num_inliers", str(15),
+                    "--VocabTreeMatching.vocab_tree_path", vocab_tree_path]
+
+                    
+
+    # mapper_args = [colmap_path, "mapper",
+    #                 "--database_path", extended_database_path,
+    #                 "--image_path", extended_images_path,
+    #                 "--input_path", base_sparse_model_path,
+    #                 "--output_path", extended_sparse_model_path]
 
     mapper_args = [colmap_path, "mapper",
                     "--database_path", extended_database_path,
                     "--image_path", extended_images_path,
                     "--input_path", base_sparse_model_path,
-                    "--output_path", extended_sparse_model_path]
+                    "--output_path", extended_sparse_model_path,
+                    "--Mapper.ignore_watermarks", str(1),
+                    "--Mapper.fix_existing_images", str(1),
+                    "--Mapper.abs_pose_min_num_inliers", str(30)]
 
     with open(log_path, "w") as logf:
         logf.write("###############################  COLMAP ARGS  ###############################\n")
@@ -91,8 +108,9 @@ def build_extended_model(base_models_directory, extended_models_directory, exten
 
 
 extended_images_directory = "..\Data\Wikiscenes_exterior_images\cathedrals"
+vocab_tree_path = "..\Data\\vocab_tree_flickr100K_words256K.bin"
 base_models_path = "..\Models\Base\cathedrals"
-extended_models_directory = "..\Models\extended_exhaustive\cathedrals"
+extended_models_directory = "..\Models\extended_vocabtree_04\cathedrals"
 
 extract_stats = {}
 for entry in os.scandir(base_models_path):
@@ -100,4 +118,4 @@ for entry in os.scandir(base_models_path):
         category_num = int(entry.name)
         print(f"Category: {category_num}")
         category_extended_images_dir = f"{extended_images_directory}\{category_num}\images_renamed"
-        build_extended_model(base_models_path, extended_models_directory, category_extended_images_dir, category_num)
+        build_extended_model(base_models_path, extended_models_directory, category_extended_images_dir, category_num, vocab_tree_path)
