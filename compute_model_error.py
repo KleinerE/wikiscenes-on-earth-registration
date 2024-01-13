@@ -19,9 +19,9 @@ args = parser.parse_args()
 
 # Load models.
 print(f"Importing extended model...")
-extended_model_root = f"extended_models/cathedrals/{args.category_index}_vocabtree"
+extended_model_root = f"../Models/extended_vocabtree_00/cathedrals/{args.category_index}"
 extended_model_path = f"{extended_model_root}/sparse/0"
-extended_images_path = f"extended_models/cathedrals/{args.category_index}/images/"
+extended_images_path = f"../Data/Wikiscenes_exterior_images/cathedrals/{args.category_index}/images/"
 extended_images_path_absolute = os.path.abspath(extended_images_path)
 extended_model_root_absolute = os.path.abspath(extended_model_root)
 extended_model_output_root = f"{extended_model_root}/score"
