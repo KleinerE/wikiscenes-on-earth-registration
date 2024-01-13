@@ -1,0 +1,4 @@
+*.pyc
+!colmap_python_utils/
+!*.ps1
+!scoresheet-template.html
