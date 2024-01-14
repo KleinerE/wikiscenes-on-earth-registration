@@ -30,11 +30,11 @@ done
 gsutil cp gs://cwge-test-bucket-0/${CAT_NUM}.7z .
 sleep 10
 7za x -y ${CAT_NUM}.7z
-colmap feature_extractor --database_path ${CAT_NUM}_base_database.db --image_path ${CAT_NUM}/images --SiftExtraction.use_gpu 0 > log.log
-colmap exhaustive_matcher --database_path ${CAT_NUM}_base_database.db --SiftMatching.use_gpu 0 >> log.log
+#colmap feature_extractor --log_to_stderr 1 --log_level 4 --database_path ${CAT_NUM}_base_database.db --image_path ${CAT_NUM}/images --SiftExtraction.use_gpu 0 &> log.log
+#colmap exhaustive_matcher --log_to_stderr 1 --log_level 4 --database_path ${CAT_NUM}_base_database.db --SiftMatching.use_gpu 0 &>> log.log
 mkdir sparse
-colmap mapper --database_path ${CAT_NUM}_base_database.db --image_path ${CAT_NUM}/images --output_path sparse/ >> log.log
-colmap model_analyzer --path sparse/0 > analysis.log
-7za a -t7z ${CAT_NUM}_base.7z sparse log.log analysis.log
+colmap mapper --log_to_stderr 1 --log_level 4 --database_path database.db --image_path ${CAT_NUM}/images --output_path sparse/ &>> log.txt
+colmap model_analyzer --log_to_stderr 1 --log_level 4 --path sparse/0 &> analysis.txt
+7za a -t7z ${CAT_NUM}_base.7z sparse log.txt analysis.txt
 gsutil cp ${CAT_NUM}_base.7z gs://cwge-test-bucket-0/
 echo successss!
