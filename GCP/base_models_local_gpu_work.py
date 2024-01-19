@@ -72,17 +72,17 @@ def extract_and_match_features_base(images_base_path, models_base_path, category
     return True
 
 
-images_base_path = "..\Data\StudioRenders\cathedrals"
-models_base_path = "..\Models\Base\cathedrals"
+images_base_path = "..\..\Data\StudioRenders\cathedrals"
+models_base_path = "..\..\Models\Base\cathedrals"
 
-def run_base_multiple(category_list_path):
+def run_base_multiple(category_list_path, timestamp):
+    models_base_path = f"..\..\Models\Base\{timestamp}\cathedrals"
     # category_list_path = ".\GCP\category_list.txt"
     with open(category_list_path) as f:
         for line in f:
             if line.rstrip().isnumeric():
                 category_num = int(line)
                 print(f"Category: {category_num}")
-                continue
                 extract_and_match_features_base(images_base_path, models_base_path, category_num)
 
 
