@@ -9,7 +9,7 @@ parser = argparse.ArgumentParser(description='')
 parser.add_argument("--category_list_path", type=str, help="path to plain text file containing category numbers to work")
 args = parser.parse_args()
 
-# timestamp = datetime.datetime.now().strftime('2024-01-19_15-29-33')
+# timestamp = '2024-01-20_14-59-55'
 timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 run_base_multiple(args.category_list_path, timestamp)
 
@@ -21,7 +21,7 @@ processes = []
 with open(args.category_list_path) as f:
     commands = [[batch_path, str(int(line)), timestamp] for line in f if line.rstrip().isnumeric()]
     print(commands)
-    processes = [subprocess.Popen(cmd, shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE) for cmd in commands]
+    processes = [subprocess.Popen(cmd, shell=True) for cmd in commands]
     for p in processes:
         p.wait()
 

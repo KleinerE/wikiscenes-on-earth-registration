@@ -38,23 +38,31 @@ while test $# -gt 0; do
   esac
 done
 
-gsutil cp gs://cwge-test-bucket-0/StudioRenders/${CAT_NUM}.7z .
+timestamp() {
+  date "+%Y-%m-%d %H:%M:%S" # current time
+}
+
+echo "[$(timestamp)]: [${CAT_NUM}] fetching data from storage bucket..."
+gsutil -q cp gs://cwge-test-bucket-0/StudioRenders/${CAT_NUM}.7z .
 sleep 10
-7za x -y ${CAT_NUM}.7z
+7za x -y -bsp0 -bso0 ${CAT_NUM}.7z
+echo "[$(timestamp)]: [${CAT_NUM}] fetch complete."
 
 #colmap feature_extractor --log_to_stderr 1 --log_level 4 --database_path ${CAT_NUM}_base_database.db --image_path ${CAT_NUM}/images --SiftExtraction.use_gpu 0 &> log.log
 #colmap exhaustive_matcher --log_to_stderr 1 --log_level 4 --database_path ${CAT_NUM}_base_database.db --SiftMatching.use_gpu 0 &>> log.log
 mkdir sparse
-colmap mapper --log_to_stderr 1 --log_level 2 --database_path database.db --image_path ${CAT_NUM}/images --output_path sparse/ &>> log.txt
-echo "colmap mapper --log_to_stderr 1 --log_level 2 --database_path database.db --image_path ${CAT_NUM}/images --output_path sparse/" >> colmap_args.txt
+echo "[$(timestamp)]: [${CAT_NUM}] running mapper..."
+colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images --output_path sparse/ &>> log.txt
+echo "colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images --output_path sparse/" >> colmap_args.txt
+echo "[$(timestamp)]: [${CAT_NUM}] mapper finished."
 
-pidof colmap | xargs -I% grep ^VmPeak /proc/%/status > analysis.txt
+colmap model_analyzer --log_to_stderr 1 --log_level 1 --path sparse/0 &> analysis.txt
 
-colmap model_analyzer --log_to_stderr 1 --log_level 2 --path sparse/0 &>> analysis.txt
+7za a -y -bsp0 -bso0 -t7z ${CAT_NUM}_base.7z sparse log.txt analysis.txt colmap_args.txt
+gsutil -q cp -r ${CAT_NUM}_base.7z gs://cwge-test-bucket-0/base/${START_TIME}/
+gsutil -q cp -r sparse gs://cwge-test-bucket-0/base/${START_TIME}/${CAT_NUM}/
+gsutil -q cp -r *.txt gs://cwge-test-bucket-0/base/${START_TIME}/${CAT_NUM}/
 
-7za a -t7z ${CAT_NUM}_base.7z sparse log.txt analysis.txt
-gsutil cp -r ${CAT_NUM}_base.7z gs://cwge-test-bucket-0/base/${START_TIME}/
-gsutil cp -r sparse gs://cwge-test-bucket-0/base/${START_TIME}/${CAT_NUM}/
-gsutil cp -r *.txt gs://cwge-test-bucket-0/base/${START_TIME}/${CAT_NUM}/
+echo "[$(timestamp)]: [${CAT_NUM}] run finished, shutting down and deleting instance..."
 
-echo successss!
+#gcloud compute instances delete test-instance-${CAT_NUM} --zone=us-central1-a --delete-disks=all --quiet
