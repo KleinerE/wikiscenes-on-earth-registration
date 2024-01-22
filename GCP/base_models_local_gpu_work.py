@@ -25,7 +25,7 @@ def extract_and_match_features_base(images_base_path, models_base_path, category
     # if not os.path.exists(category_model_path):
     #     os.makedirs(category_model_path)
     
-    log_path = f"{category_output_path}\log.txt"
+    log_path = f"{category_output_path}\colmap_log.txt"
     arg_log_path = f"{category_output_path}\colmap_args.txt"
 
     # define colmap parameters
@@ -72,12 +72,8 @@ def extract_and_match_features_base(images_base_path, models_base_path, category
     return True
 
 
-images_base_path = "..\..\Data\StudioRenders\cathedrals"
-models_base_path = "..\..\Models\Base\cathedrals"
 
-def run_base_multiple(category_list_path, timestamp):
-    models_base_path = f"..\..\Models\Base\{timestamp}\cathedrals"
-    # category_list_path = ".\GCP\category_list.txt"
+def run_base_multiple(category_list_path, models_base_path, images_base_path):
     with open(category_list_path) as f:
         for line in f:
             if line.rstrip().isnumeric():
