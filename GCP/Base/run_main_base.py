@@ -5,7 +5,7 @@ import subprocess
 import datetime
 import shutil
 import re
-from Base.local_gpu_extract_and_match_base import run_base_multiple
+from local_gpu_extract_and_match_base import run_base_multiple
 
 parser = argparse.ArgumentParser(description='')
 parser.add_argument("--category-list-path", type=str, required=True, help="path to plain text file containing category numbers to work")

@@ -38,7 +38,7 @@ def extract_and_match_features_extended(extended_models_directory, extended_imag
 
     matcher_args = [colmap_path, "vocab_tree_matcher",
                     "--database_path", extended_database_path,
-                    "--SiftMatching.min_num_inliers", str(5),
+                    "--TwoViewGeometry.min_num_inliers", str(5),
                     "--VocabTreeMatching.vocab_tree_path", vocab_tree_path]
 
     # mapper_args = [colmap_path, "mapper",
