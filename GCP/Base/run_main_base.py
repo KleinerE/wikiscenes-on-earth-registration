@@ -5,7 +5,7 @@ import subprocess
 import datetime
 import shutil
 import re
-from base_models_local_gpu_work import run_base_multiple
+from Base.local_gpu_extract_and_match_base import run_base_multiple
 
 parser = argparse.ArgumentParser(description='')
 parser.add_argument("--category-list-path", type=str, required=True, help="path to plain text file containing category numbers to work")
@@ -43,7 +43,7 @@ if use_existing == 'n':
 
 print("Starting cloud compute instances...")
 
-batch_path = r"C:\Projects\Uni\WikiScenes-prod\Scripts\GCP\manage-instance-single.bat"
+batch_path = r"C:\Projects\Uni\WikiScenes-prod\Scripts\GCP\Base\manage-instance-single-base.bat"
 processes = []
 
 with open(args.category_list_path) as f:

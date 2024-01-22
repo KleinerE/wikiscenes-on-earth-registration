@@ -17,7 +17,7 @@ TIMEOUT -T 30 >NUL
 echo [%DATE% %TIME%] [%1] Instance created: %VM_NAME%.
 
 echo [%DATE% %TIME%] [%1] Uploading data to instance...
-call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=yes instance-work-extended.sh %VM_NAME%:. >> %LOG_FILE% 2>&1
+call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=yes Extended\instance-work-extended.sh %VM_NAME%:. >> %LOG_FILE% 2>&1
 call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=yes %MODEL_DIR%\database.db %VM_NAME%:. >> %LOG_FILE% 2>&1
 call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=yes %MODEL_DIR%\colmap_args.txt %VM_NAME%:. >> %LOG_FILE% 2>&1
 call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=yes %MODEL_DIR%\colmap_log.txt %VM_NAME%:. >> %LOG_FILE% 2>&1
