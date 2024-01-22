@@ -4,6 +4,7 @@ import argparse
 import subprocess
 import datetime
 import shutil
+import re
 from extended_models_local_gpu_work import run_ext_multiple
 
 parser = argparse.ArgumentParser(description='')
@@ -12,6 +13,13 @@ parser.add_argument("--extended_run_name", type=str, required=True, help="unique
 parser.add_argument("--base_run_name", type=str, required=True, help="the name of the base model to extend")
 parser.add_argument('--force', nargs='?', default=False, const=True)
 args = parser.parse_args()
+
+pattern = re.compile("^[a-z]([-a-z0-9]*[a-z0-9])?$")
+if pattern.match(args.extended_run_name) is None:
+    print("Extended run name cannot be used to create compute instances! Supply a name that complies with convention.")
+    print("The first character must be a lowercase letter, and all the following characters must be hyphens, lowercase letters, or digits, except the last character, which cannot be a hyphen.")
+    print("For details, visit: https://cloud.google.com/compute/docs/naming-resources#resource-name-format")
+    exit()
 
 extended_images_root = os.path.abspath("..\..\Data\Wikiscenes_exterior_images\cathedrals")
 base_models_directory = os.path.abspath(f"..\..\Models\Base\{args.base_run_name}\cathedrals")

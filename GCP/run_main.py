@@ -4,6 +4,7 @@ import argparse
 import subprocess
 import datetime
 import shutil
+import re
 from base_models_local_gpu_work import run_base_multiple
 
 parser = argparse.ArgumentParser(description='')
@@ -11,6 +12,13 @@ parser.add_argument("--category-list-path", type=str, required=True, help="path 
 parser.add_argument("--name", type=str, required=True, help="unique name to distinguish this run from other runs")
 parser.add_argument('--force', nargs='?', default=False, const=True)
 args = parser.parse_args()
+
+pattern = re.compile("^[a-z]([-a-z0-9]*[a-z0-9])?$")
+if pattern.match(args.name) is None:
+    print("Name cannot be used to create compute instances! Supply a name that complies with convention.")
+    print("The first character must be a lowercase letter, and all the following characters must be hyphens, lowercase letters, or digits, except the last character, which cannot be a hyphen.")
+    print("For details, visit: https://cloud.google.com/compute/docs/naming-resources#resource-name-format")
+    exit()
 
 images_base_path = "..\..\Data\StudioRenders\cathedrals"
 models_base_path = f"..\..\Models\Base\{args.name}\cathedrals"
