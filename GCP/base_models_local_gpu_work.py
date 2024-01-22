@@ -2,7 +2,7 @@ import os
 import subprocess
 import datetime
 
-colmap_path = r"C:\Projects\Uni\WikiScenes-prod\COLMAP-3.8-windows-cuda\COLMAP.bat"
+colmap_path = r"C:\Projects\Uni\WikiScenes-prod\COLMAP-3.9.1-windows-cuda\COLMAP.bat"
 
 def extract_and_match_features_base(images_base_path, models_base_path, category_index):
 

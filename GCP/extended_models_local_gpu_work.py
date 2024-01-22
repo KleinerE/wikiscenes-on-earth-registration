@@ -4,7 +4,7 @@ import datetime
 import shutil
 import codecs
 
-colmap_path = r"C:\Projects\Uni\WikiScenes-prod\COLMAP-3.8-windows-cuda\COLMAP.bat"
+colmap_path = r"C:\Projects\Uni\WikiScenes-prod\COLMAP-3.9.1-windows-cuda\COLMAP.bat"
 
 def extract_and_match_features_extended(extended_models_directory, extended_images_path, category_index, vocab_tree_path=''):
 
