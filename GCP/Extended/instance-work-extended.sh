@@ -79,7 +79,7 @@ gsutil -q cp -r *.txt gs://cwge-test-bucket-0/extended/${RUN_NAME}/${CAT_NUM}/ >
 
 echo "[$(timestamp)]: [${CAT_NUM}] run finished, shutting down and deleting instance..." >> log.log 2>&1
 
-gsutil -q cp -r log.log gs://cwge-test-bucket-0/extended/${RUN_NAME}/${CAT_NUM}/ >/dev/null 2>&1
+gsutil -q cp -r *.log gs://cwge-test-bucket-0/extended/${RUN_NAME}/${CAT_NUM}/ >/dev/null 2>&1
 
 #gcloud compute instances delete test-instance-${CAT_NUM} --zone=us-central1-a --delete-disks=all --quiet
 sudo shutdown -h now

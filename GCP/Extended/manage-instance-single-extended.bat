@@ -18,11 +18,13 @@ echo [%DATE% %TIME%] [%1] Instance created: %VM_NAME%.
 
 echo [%DATE% %TIME%] [%1] Uploading data to instance...
 call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=yes Extended\instance-work-extended.sh %VM_NAME%:. >> %LOG_FILE% 2>&1
+call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=yes monitor-mem.sh %VM_NAME%:. >> %LOG_FILE% 2>&1
 call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=yes %MODEL_DIR%\database.db %VM_NAME%:. >> %LOG_FILE% 2>&1
 call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=yes %MODEL_DIR%\colmap_args.txt %VM_NAME%:. >> %LOG_FILE% 2>&1
 call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=yes %MODEL_DIR%\colmap_log.txt %VM_NAME%:. >> %LOG_FILE% 2>&1
 echo [%DATE% %TIME%] [%1] Done.
 
 echo [%DATE% %TIME%] [%1] Starting instance work...
+start /B gcloud compute ssh --quiet --zone "%VM_ZONE%" "%VM_NAME%" --project "analog-mix-408806" --force-key-file-overwrite --command="chmod +x ./monitor-mem.sh && nohup bash ./monitor-mem.sh -c %1 -n %2 > /dev/null 2>&1 & disown" >NUL
 start /B gcloud compute ssh --quiet --zone "%VM_ZONE%" "%VM_NAME%" --project "analog-mix-408806" --force-key-file-overwrite --command="chmod +x ./instance-work-extended.sh && nohup bash ./instance-work-extended.sh -c %1 -n %2 -b %3 > /dev/null 2>&1 & disown" >NUL
 echo [%DATE% %TIME%] [%1] Done.
