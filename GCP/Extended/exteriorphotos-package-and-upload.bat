@@ -1,6 +1,6 @@
 @echo off
 
-pushd ..\..\Data\Wikiscenes_exterior_images\cathedrals\
+pushd ..\..\Data\WikiScenes_exterior_images\cathedrals\
 
 if exist %1.7z goto UPLOAD
 call "C:\Program Files\7-Zip\7z.exe" a %1.7z %1

@@ -6,7 +6,7 @@ import codecs
 
 colmap_path = r"C:\Projects\Uni\WikiScenes-prod\COLMAP-3.9.1-windows-cuda\COLMAP.bat"
 
-def extract_and_match_features_extended(extended_models_directory, extended_images_path, category_index, vocab_tree_path=''):
+def extract_and_match_features_extended(extended_models_directory, extended_images_path, category_index, additional_extractor_args, matcher_type, additional_matcher_args, vocab_tree_path=''):
 
     if not os.path.isfile(colmap_path):
         print(f"COLMAP not found in path: {colmap_path}. Aborting")
@@ -31,25 +31,34 @@ def extract_and_match_features_extended(extended_models_directory, extended_imag
         lf.write('\n'.join(i for i in os.listdir(extended_images_path)))
     
     # define colmap parameters
-    feature_extractor_args = [colmap_path, "feature_extractor",
+    feature_extractor_args_all = [colmap_path, "feature_extractor",
                     "--database_path", extended_database_path,
                     "--image_path", extended_images_path,
                     "--image_list_path", extended_images_list_path]
+	
+    if additional_extractor_args is not None:
+        feature_extractor_args_all.extend(additional_extractor_args.split())
 
-    matcher_args = [colmap_path, "vocab_tree_matcher",
-                    "--database_path", extended_database_path,
-                    "--TwoViewGeometry.min_num_inliers", str(5),
-                    "--VocabTreeMatching.vocab_tree_path", vocab_tree_path]
-
+    matcher_args_all = [colmap_path, matcher_type,
+                    "--database_path", extended_database_path]
+                    # "--TwoViewGeometry.min_num_inliers", str(5),
+                    # "--VocabTreeMatching.vocab_tree_path", vocab_tree_path]
+                    
+    if matcher_type == 'vocab_tree_matcher':
+        matcher_args_all.extend(["--VocabTreeMatching.vocab_tree_path", vocab_tree_path])
+		
+    if additional_matcher_args is not None:
+        matcher_args_all.extend(additional_matcher_args.split())
+        
     # mapper_args = [colmap_path, "mapper",
     #                 "--database_path", database_path,
     #                 "--image_path", category_images_path,
     #                 "--output_path", category_model_path]
 
     with open(arg_log_path, "w") as logf:
-        logf.write(" ".join(arg for arg in feature_extractor_args))
+        logf.write(" ".join(arg for arg in feature_extractor_args_all))
         logf.write("\n")
-        logf.write(" ".join(arg for arg in matcher_args))
+        logf.write(" ".join(arg for arg in matcher_args_all))
         logf.write("\n")
         # logf.write(" ".join(arg for arg in mapper_args))
         # logf.write("\n")
@@ -57,13 +66,13 @@ def extract_and_match_features_extended(extended_models_directory, extended_imag
     # Run feature extractor
     logf = open(log_path, "w")
     print(f"[{datetime.datetime.now()}] category {category_index}: extracting features...")
-    subprocess.run(feature_extractor_args, stdout=logf, stderr=subprocess.STDOUT)
+    subprocess.run(feature_extractor_args_all, stdout=logf, stderr=subprocess.STDOUT)
     logf.close()
     
     # Run exhaustive matcher
     logf = open(log_path, "a")
     print(f"[{datetime.datetime.now()}] category {category_index}: matching features...")
-    subprocess.run(matcher_args, stdout=logf, stderr=subprocess.STDOUT)
+    subprocess.run(matcher_args_all, stdout=logf, stderr=subprocess.STDOUT)
     logf.close()
 
     # # Run mapper
@@ -89,7 +98,7 @@ def fetch_base_db(base_run_name, category_index, extended_models_directory):
     subprocess.run(gsutil_args)
     print(f"Done.")
 
-def run_ext_multiple(category_list_path, extended_models_directory, extended_images_root, base_run_name, vocab_tree_path=''):
+def run_ext_multiple(category_list_path, extended_models_directory, extended_images_root, base_run_name, extractor_args, matcher_type, matcher_args, vocab_tree_path=''):
     with open(category_list_path) as f:
         for line in f:
             if line.rstrip().isnumeric():
@@ -97,7 +106,7 @@ def run_ext_multiple(category_list_path, extended_models_directory, extended_ima
                 print(f"Category: {category_num}")                
                 fetch_base_db(base_run_name, category_num, extended_models_directory)
                 extended_images_directory = f"{extended_images_root}\{category_num}\images_renamed"
-                extract_and_match_features_extended(extended_models_directory, extended_images_directory, category_num, vocab_tree_path)
+                extract_and_match_features_extended(extended_models_directory, extended_images_directory, category_num, extractor_args, matcher_type, matcher_args, vocab_tree_path)
 
 
 if __name__ == "__main__":

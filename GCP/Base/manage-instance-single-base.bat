@@ -1,6 +1,7 @@
 @echo off
 @REM %1 = category number
 @REM %2 = run name
+@REM %3 = additional mapper args, as single double-quoted string
 
 set VM_NAME=inst-%2-%1
 set VM_ZONE=us-central1-a
@@ -9,6 +10,21 @@ set VM_ACCT=test-service-account-00@analog-mix-408806.iam.gserviceaccount.com
 
 set MODEL_DIR=..\..\Models\Base\%2\cathedrals\%1
 set LOG_FILE=%MODEL_DIR%\log.log
+
+@REM Handle last argument - optional additional mapper args. 
+if [%3]==[] (goto :unknown) else goto :specific
+:unknown
+set temp=
+goto :continue
+:specific
+set temp=%3
+set temp=%temp:"=\"%
+set temp=-a %temp%
+goto :continue
+:continue
+echo "chmod +x ./instance-work-base.sh && nohup bash ./instance-work-base.sh -c %1 -n %2 %temp% > /dev/null 2>&1 & disown"
+
+@REM exit /B 0
 
 echo [%DATE% %TIME%] [%1] Creating instance...
 call gcloud compute instances create %VM_NAME% --quiet --image=test-image-00 --zone %VM_ZONE% --machine-type %VM_TYPE% --service-account %VM_ACCT% --scopes storage-rw > %LOG_FILE% 2>&1
@@ -24,6 +40,6 @@ call gcloud compute scp --quiet --zone "%VM_ZONE%" --strict-host-key-checking=ye
 echo [%DATE% %TIME%] [%1] Done.
 
 echo [%DATE% %TIME%] [%1] Starting instance work...
-start /B gcloud compute ssh --quiet --zone "%VM_ZONE%" "%VM_NAME%" --project "analog-mix-408806" --force-key-file-overwrite --command="chmod +x ./monitor-mem.sh && nohup bash ./monitor-mem.sh -c %1 -n %2 > /dev/null 2>&1 & disown" >NUL
-start /B gcloud compute ssh --quiet --zone "%VM_ZONE%" "%VM_NAME%" --project "analog-mix-408806" --force-key-file-overwrite --command="chmod +x ./instance-work-base.sh && nohup bash ./instance-work-base.sh -c %1 -n %2 > /dev/null 2>&1 & disown" >NUL
+start /B gcloud compute ssh --quiet --zone "%VM_ZONE%" "%VM_NAME%" --project "analog-mix-408806" --force-key-file-overwrite --command="chmod +x ./monitor-mem.sh && nohup bash ./monitor-mem.sh > /dev/null 2>&1 & disown" >NUL
+start /B gcloud compute ssh --quiet --zone "%VM_ZONE%" "%VM_NAME%" --project "analog-mix-408806" --force-key-file-overwrite --command="chmod +x ./instance-work-base.sh && nohup bash ./instance-work-base.sh -c %1 -n %2 %temp% > /dev/null 2>&1 & disown; exit" >NUL
 echo [%DATE% %TIME%] [%1] Done.

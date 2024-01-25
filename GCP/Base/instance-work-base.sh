@@ -32,6 +32,13 @@ while test $# -gt 0; do
       fi
       shift
       ;;
+	-a)
+      shift
+      if test $# -gt 0; then
+        export MAPPER_ARGS=$1
+      fi
+      shift
+      ;;
     *)
       break
       ;;
@@ -40,6 +47,11 @@ done
 
 timestamp() {
   date "+%Y-%m-%d %H:%M:%S" # current time
+}
+
+run_mapper() {
+	echo "colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images --output_path sparse/ ${MAPPER_ARGS}" >> colmap_args.txt
+	colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images --output_path sparse/ ${MAPPER_ARGS} &>> colmap_log.txt
 }
 
 echo "[$(timestamp)]: [${CAT_NUM}] fetching Google Earth Studio images from storage bucket..." > log.log
@@ -52,8 +64,7 @@ echo "[$(timestamp)]: [${CAT_NUM}] fetch complete." >> log.log 2>&1
 #colmap exhaustive_matcher --log_to_stderr 1 --log_level 4 --database_path ${CAT_NUM}_base_database.db --SiftMatching.use_gpu 0 &>> log.log
 mkdir sparse >> log.log 2>&1
 echo "[$(timestamp)]: [${CAT_NUM}] running mapper..." >> log.log 2>&1
-colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images --output_path sparse/ &>> colmap_log.txt
-echo "colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images --output_path sparse/" >> colmap_args.txt
+run_mapper
 echo "[$(timestamp)]: [${CAT_NUM}] mapper finished." >> log.log 2>&1
 
 colmap model_analyzer --log_to_stderr 1 --log_level 1 --path sparse/0 &> analysis.txt

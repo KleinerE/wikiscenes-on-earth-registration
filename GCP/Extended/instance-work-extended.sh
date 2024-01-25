@@ -42,6 +42,13 @@ while test $# -gt 0; do
       fi
       shift
       ;;
+  -a)
+      shift
+      if test $# -gt 0; then
+        export MAPPER_ARGS=$1
+      fi
+      shift
+      ;;
     *)
       break
       ;;
@@ -51,6 +58,13 @@ done
 timestamp() {
   date "+%Y-%m-%d %H:%M:%S" # current time
 }
+
+run_mapper() {
+	echo "colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images_renamed --input_path in/sparse/0 --output_path out/sparse/0 ${MAPPER_ARGS} " >> colmap_args.txt
+	#colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images --output_path sparse/ ${MAPPER_ARGS} &>> colmap_log.txt
+	colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images_renamed --input_path in/sparse/0 --output_path out/sparse/0 ${MAPPER_ARGS} &>> colmap_log.txt
+}
+
 
 echo "[$(timestamp)]: [${CAT_NUM}] fetching WikiScenes exterior images from storage bucket..." > log.log 2>&1
 gsutil cp gs://cwge-test-bucket-0/WikiScenes_exterior_images/${CAT_NUM}.7z . >> log.log 2>&1
@@ -65,8 +79,7 @@ echo "[$(timestamp)]: [${CAT_NUM}] fetch complete." >> log.log 2>&1
 #colmap exhaustive_matcher --log_to_stderr 1 --log_level 4 --database_path ${CAT_NUM}_base_database.db --SiftMatching.use_gpu 0 &>> log.log
 mkdir -p out/sparse/0 >> log.log 2>&1
 echo "[$(timestamp)]: [${CAT_NUM}] running mapper..." >> log.log 2>&1
-colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images_renamed --input_path in/sparse/0 --output_path out/sparse/0 --Mapper.abs_pose_min_num_inliers 5 &>> colmap_log.txt
-echo "colmap mapper --log_to_stderr 1 --log_level 1 --database_path database.db --image_path ${CAT_NUM}/images_renamed --input_path in/sparse/0 --output_path out/sparse/0 --Mapper.abs_pose_min_num_inliers 5" >> colmap_args.txt
+run_mapper
 echo "[$(timestamp)]: [${CAT_NUM}] mapper finished." >> log.log 2>&1
 
 colmap model_analyzer --log_to_stderr 1 --log_level 1 --path out/sparse/0 &> analysis.txt

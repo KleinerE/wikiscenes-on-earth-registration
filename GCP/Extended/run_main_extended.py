@@ -11,6 +11,10 @@ parser = argparse.ArgumentParser(description='')
 parser.add_argument("--category-list-path", type=str, required=True, help="path to plain text file containing category numbers to work")
 parser.add_argument("--extended_run_name", type=str, required=True, help="unique name to distinguish this run from other runs")
 parser.add_argument("--base_run_name", type=str, required=True, help="the name of the base model to extend")
+parser.add_argument("--extractor_args", type=str, help="args for feature extractor")
+parser.add_argument("--matcher_type", type=str, nargs='?', const=1, default="vocab_tree_matcher", help="the type of feature matcher that will be used")
+parser.add_argument("--matcher_args", type=str, help="args for feature matcher")
+parser.add_argument("--mapper_args", type=str, help="args for mapper")
 parser.add_argument('--force', nargs='?', default=False, const=True)
 args = parser.parse_args()
 
@@ -42,20 +46,25 @@ if use_existing == 'n':
         print(f"Overwriting {ext_models_directory}...")
         shutil.rmtree(ext_models_directory)
     print(f"Starting new local run at: {ext_models_directory}...")
-    run_ext_multiple(args.category_list_path, ext_models_directory, extended_images_root, args.base_run_name, vocab_tree_path)
+    run_ext_multiple(args.category_list_path, ext_models_directory, extended_images_root, args.base_run_name, args.extractor_args, args.matcher_type, args.matcher_args, vocab_tree_path)
     print(f"Local run completed at: {ext_models_directory}.")
 
 print("Starting cloud compute instances...")
 
 batch_path = r"C:\Projects\Uni\WikiScenes-prod\Scripts\GCP\Extended\manage-instance-single-extended.bat"
-processes = []
+# processes = []
 
 with open(args.category_list_path) as f:
-    commands = [[batch_path, str(int(line)), args.extended_run_name, args.base_run_name] for line in f if line.rstrip().isnumeric()]
+    # commands = [[batch_path, str(int(line)), args.extended_run_name, args.base_run_name] for line in f if line.rstrip().isnumeric()]
+	# print(commands)
+    # processes = [subprocess.Popen(cmd, shell=True) for cmd in commands]
+    # for p in processes:
+    #     p.wait()
+    commands = [' '.join([batch_path, str(int(line)), args.extended_run_name, args.base_run_name]) for line in f if line.rstrip().isnumeric()]
+    if args.mapper_args is not None:
+        commands = [c + f" {args.mapper_args}" for c in commands]
     print(commands)
-    processes = [subprocess.Popen(cmd, shell=True) for cmd in commands]
-    for p in processes:
-        p.wait()
+    [os.system(cmd) for cmd in commands]
 
 print("Done launching - you can now close this window.")
 
