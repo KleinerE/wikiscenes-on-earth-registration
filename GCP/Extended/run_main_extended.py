@@ -62,7 +62,7 @@ with open(args.category_list_path) as f:
     #     p.wait()
     commands = [' '.join([batch_path, str(int(line)), args.extended_run_name, args.base_run_name]) for line in f if line.rstrip().isnumeric()]
     if args.mapper_args is not None:
-        commands = [c + f" {args.mapper_args}" for c in commands]
+        commands = [c + f" \"{args.mapper_args}\"" for c in commands]
     print(commands)
     [os.system(cmd) for cmd in commands]
 

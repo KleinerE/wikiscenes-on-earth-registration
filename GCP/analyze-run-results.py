@@ -26,6 +26,6 @@ with open(args.category_list_path) as f:
     categories = [int(line) for line in f if line.rstrip().isnumeric()]
     commands = [[shutil.which('gsutil'), "cat", f"gs://cwge-test-bucket-0/{run_type}/{args.run_name}/{i}/analysis.txt"] for i in categories]
     whole_analysis_files = [subprocess.run(cmd, capture_output=True).stdout.decode('utf-8') for cmd in commands]
-    relevant_rows = [a.split('\n')[row_dict[args.row_name]] for a in whole_analysis_files]
-    split_lines=[r.split("] ")[1] for r in relevant_rows]
+    relevant_rows = [a.split('\n')[row_dict[args.row_name]] if len(a)>0 else '' for a in whole_analysis_files]
+    split_lines=[r.split("] ")[-1] for r in relevant_rows]
     [print(f"{int(category)}: {s}") for category, s in zip(categories, split_lines)]
