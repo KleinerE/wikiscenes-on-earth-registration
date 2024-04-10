@@ -103,10 +103,11 @@ def run_ext_multiple(category_list_path, extended_models_directory, extended_ima
         for line in f:
             if line.rstrip().isnumeric():
                 category_num = int(line)
-                print(f"Category: {category_num}")                
-                fetch_base_db(base_run_name, category_num, extended_models_directory)
-                extended_images_directory = f"{extended_images_root}\{category_num}\images_renamed"
-                extract_and_match_features_extended(extended_models_directory, extended_images_directory, category_num, extractor_args, matcher_type, matcher_args, vocab_tree_path)
+                print(f"Category: {category_num}") 
+                if not os.path.exists(f"{extended_models_directory}\{category_num}"):
+                    fetch_base_db(base_run_name, category_num, extended_models_directory)
+                    extended_images_directory = f"{extended_images_root}\{category_num}\images_renamed"
+                    extract_and_match_features_extended(extended_models_directory, extended_images_directory, category_num, extractor_args, matcher_type, matcher_args, vocab_tree_path)
 
 
 if __name__ == "__main__":

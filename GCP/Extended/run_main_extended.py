@@ -16,6 +16,7 @@ parser.add_argument("--matcher_type", type=str, nargs='?', const=1, default="voc
 parser.add_argument("--matcher_args", type=str, help="args for feature matcher")
 parser.add_argument("--mapper_args", type=str, help="args for mapper")
 parser.add_argument('--force', nargs='?', default=False, const=True)
+parser.add_argument('--local_only', nargs='?', default=False, const=True)
 args = parser.parse_args()
 
 pattern = re.compile("^[a-z]([-a-z0-9]*[a-z0-9])?$")
@@ -48,6 +49,9 @@ if use_existing == 'n':
     print(f"Starting new local run at: {ext_models_directory}...")
     run_ext_multiple(args.category_list_path, ext_models_directory, extended_images_root, args.base_run_name, args.extractor_args, args.matcher_type, args.matcher_args, vocab_tree_path)
     print(f"Local run completed at: {ext_models_directory}.")
+
+if(args.local_only):
+    exit()
 
 print("Starting cloud compute instances...")
 
