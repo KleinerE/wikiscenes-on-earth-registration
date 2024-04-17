@@ -2,7 +2,7 @@ import os
 import shutil
 import argparse
 import json
-from tqdm import tqdm
+# from tqdm import tqdm
 
 # parser = argparse.ArgumentParser(description='construct indexes for comparing extended model to reference models.')
 # parser.add_argument('category_index')
@@ -20,7 +20,7 @@ def rename_category_images(category_images_root_path):
 
     renames_dict = {}
     idx = 0
-    for filename in tqdm(os.listdir(images_input_dir)):
+    for filename in os.listdir(images_input_dir):
         extension = filename.split(".")[-1]
         new_filename = f"ext_img_{idx:05d}.{extension}"
         renames_dict[new_filename] = filename
