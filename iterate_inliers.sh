@@ -46,6 +46,13 @@ while test $# -gt 0; do
       fi
       shift
       ;;
+	--reps)
+      shift
+      if test $# -gt 0; then
+        export REPS=$1
+      fi
+      shift
+      ;;
     *)
       break
       ;;
@@ -55,6 +62,7 @@ done
 # default values for optional parameters.
 echo "${INCREMENT:=1}" >> /dev/null
 echo "${START_IND:=5}" >> /dev/null
+echo "${REPS:=1}" >> /dev/null
 
 timestamp() {
   date "+%Y-%m-%d %H:%M:%S" # current time
@@ -88,29 +96,38 @@ sleep 1
 
 touch results.csv
 
+for (( r=0; r<REPS; r+=1 ))
+do
+echo "[$(timestamp)]: REP: $r" >> log.log
+mkdir base/rep_$r
+mkdir ext/rep_$r
+
 for (( i=START_IND; i<=STOP_IND; i+=INCREMENT ))
 do
     echo "[$(timestamp)]: inliers: $i" >> log.log
 	echo "[$(timestamp)]: base" >> log.log
 	echo -n $i, >> results.csv
-	mkdir base/sparse_$i
-	colmap mapper --log_to_stderr 1 --database_path ./base/database.db --image_path ./StudioRenders/${CAT_NUM}/images/ --output_path ./base/sparse_$i/ --Mapper.min_num_matches $i --Mapper.ignore_watermarks 1 --Mapper.ba_global_images_ratio 20 --Mapper.ba_global_points_ratio 20 --Mapper.ba_global_images_freq 5000 --Mapper.ba_global_points_freq 2500000 --Mapper.ba_global_max_num_iterations 1 --Mapper.ba_global_max_refinements 1 &> colmap.log
+	export BASE_MODEL_DIR=base/rep_$r/sparse_$i
+	mkdir ${BASE_MODEL_DIR}
+	colmap mapper --log_to_stderr 1 --database_path ./base/database.db --image_path ./StudioRenders/${CAT_NUM}/images/ --output_path ${BASE_MODEL_DIR} --Mapper.min_num_matches $i --Mapper.ignore_watermarks 1 --Mapper.ba_global_images_ratio 20 --Mapper.ba_global_points_ratio 20 --Mapper.ba_global_images_freq 5000 --Mapper.ba_global_points_freq 2500000 --Mapper.ba_global_max_num_iterations 1 --Mapper.ba_global_max_refinements 1 &> ${BASE_MODEL_DIR}/colmap.log
 	
-	export INPUT_DIR=./base/sparse_$i/0/
-	if test -d ./base/sparse_$i/1/; then
-	 export INPUT_DIR=./base/sparse_$i/1/
-	fi
-	echo ${INPUT_DIR} >> log.log
+	export INPUT_DIR=${BASE_MODEL_DIR}/0/
+	# if test -d ${BASE_MODEL_DIR}/1/; then
+	 # export INPUT_DIR=${BASE_MODEL_DIR}/1/
+	# fi
+	# echo ${INPUT_DIR} >> log.log
 	colmap model_analyzer --log_to_stderr 1 --path ${INPUT_DIR} &> ${INPUT_DIR}/analysis.txt
 	echo -n "$(sed -n '3p' < ${INPUT_DIR}/analysis.txt | awk '{ print $NF }')", >> results.csv
 	
 	echo "[$(timestamp)]: ext" >> log.log
-	mkdir ext/sparse_$i
-	colmap mapper --log_to_stderr 1 --database_path ./ext/database.db --image_path ./WikiScenes_exterior_images/${CAT_NUM}/images_renamed/ --input_path ${INPUT_DIR} --output_path ./ext/sparse_$i/ --Mapper.min_num_matches $i --Mapper.fix_existing_images 1 --Mapper.tri_max_transitivity 3 --Mapper.tri_ignore_two_view_tracks 0 --Mapper.abs_pose_max_error 36 --Mapper.ba_global_max_refinement_change 0.0015 --Mapper.ba_global_images_ratio 20 --Mapper.ba_global_points_ratio 20 --Mapper.ba_global_images_freq 5000 --Mapper.ba_global_points_freq 2500000 --Mapper.ba_global_max_num_iterations 1 --Mapper.ba_global_max_refinements 1 &> colmap.log
-	colmap model_analyzer --log_to_stderr 1 --path ./ext/sparse_$i/ &> ./ext/sparse_$i/analysis.txt
-	echo "$(sed -n '3p' < ./ext/sparse_$i/analysis.txt | awk '{ print $NF }')", >> results.csv
+	export EXT_MODEL_DIR=ext/rep_$r/sparse_$i
+	mkdir ${EXT_MODEL_DIR}
+	colmap mapper --log_to_stderr 1 --database_path ./ext/database.db --image_path ./WikiScenes_exterior_images/${CAT_NUM}/images_renamed/ --input_path ${INPUT_DIR} --output_path ${EXT_MODEL_DIR} --Mapper.min_num_matches $i --Mapper.fix_existing_images 1 --Mapper.tri_max_transitivity 3 --Mapper.tri_ignore_two_view_tracks 0 --Mapper.abs_pose_max_error 36 --Mapper.ba_global_max_refinement_change 0.0015 --Mapper.ba_global_images_ratio 20 --Mapper.ba_global_points_ratio 20 --Mapper.ba_global_images_freq 5000 --Mapper.ba_global_points_freq 2500000 --Mapper.ba_global_max_num_iterations 1 --Mapper.ba_global_max_refinements 1 &> ${EXT_MODEL_DIR}/colmap.log
+	colmap model_analyzer --log_to_stderr 1 --path ${EXT_MODEL_DIR} &> ${EXT_MODEL_DIR}/analysis.txt
+	echo "$(sed -n '3p' < ${EXT_MODEL_DIR}/analysis.txt | awk '{ print $NF }')", >> results.csv
 done
 
+done
 echo "[$(timestamp)]: [${CAT_NUM}] run finished. Sending results to storage bucket and shutting down..." >> log.log 2>&1
 
 gsutil -q cp -r results.csv gs://cwge-test-bucket-0/inliers_search/${CAT_NUM}/ >> log.log 2>&1
