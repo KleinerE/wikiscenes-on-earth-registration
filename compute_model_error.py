@@ -12,27 +12,28 @@ from model_score_helpers import geodesic_error
 from model_visualization import create_transform, determine_image_pair_best_image, get_image_inverse_transform, render_image_pair
 
 parser = argparse.ArgumentParser(description='')
-parser.add_argument('category_index')
-parser.add_argument('component_index')
-parser.add_argument('--user-view-adjust', nargs='?', default=False, const=True)
+parser.add_argument('--category_index')
+parser.add_argument('--w3d_component_index')
+parser.add_argument('--extended_model_root')
+parser.add_argument('--user_view_adjust', nargs='?', default=False, const=True)
 args = parser.parse_args()
 
 # Load models.
 print(f"Importing extended model...")
-extended_model_root = f"../Models/extended_vocabtree_00/cathedrals/{args.category_index}"
-extended_model_path = f"{extended_model_root}/sparse/0"
-extended_images_path = f"../Data/Wikiscenes_exterior_images/cathedrals/{args.category_index}/images/"
-extended_images_path_absolute = os.path.abspath(extended_images_path)
-extended_model_root_absolute = os.path.abspath(extended_model_root)
-extended_model_output_root = f"{extended_model_root}/score"
-pair_visualizations_path = f"{extended_model_output_root}/image_pair_vis/"
+# extended_model_root = f"../Models/extended_vocabtree_00/cathedrals/{args.category_index}"
+extended_model_path = f"{args.extended_model_root}"
+extended_images_root = f"../Data/Wikiscenes_exterior_images/cathedrals/{args.category_index}"
+extended_images_path_absolute = os.path.abspath(f"{extended_images_root}/images_renamed")
+extended_model_root_absolute = os.path.abspath(args.extended_model_root)
+extended_model_output_root = f"{args.extended_model_root}/score"
+pair_visualizations_path = os.path.abspath(f"{extended_model_output_root}/image_pair_vis/")
 ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
-with open(f"{extended_model_root}/images_new_names.json", 'r') as imgnamesfile:
+with open(f"{extended_images_root}/images_new_names.json", 'r') as imgnamesfile:
     ext_img_orig_names = json.load(imgnamesfile)
 print(f"Done - {len(ext_images)} images  ,  {len(ext_points3D)} points")
 
 print(f"Importing reference model...")
-reference_model_path = f"WikiScenes3D/{args.category_index}/{args.component_index}"
+reference_model_path = f"../Data/WikiScenes3D/{args.category_index}/{args.w3d_component_index}"
 ref_cameras, ref_images, ref_points3D = read_model(reference_model_path, ext='.txt')
 print(f"Done - {len(ref_images)} images  ,  {len(ref_points3D)} points")
 
@@ -122,7 +123,7 @@ with open(orientation_errors_out_path, 'w') as f:
 
 print(f"wrote orientation errors to: {orientation_errors_out_path}")
 
-exit()
+# exit()
 
 
 # Visualize.
@@ -130,8 +131,8 @@ exit()
 uva=args.user_view_adjust
 
 bbox_center_ref = np.array([2,2,0])
-image0_color = [0.2, 0.9, 0.6]
-image1_color = [0.6, 0.6, 0.2]
+image0_color = [0.2, 0.2, 0.9]
+image1_color = [0.9, 0.2, 0.2]
 
 # "view" transform relative to chosen image - rotate along x axis by 210 degrees and move forwards & upwards.
 R_view = qvec2rotmat([-0.258819, 0.9659258, 0, 0])
