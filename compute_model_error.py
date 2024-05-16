@@ -2,40 +2,140 @@ import os
 import argparse
 import numpy as np
 import json
+import csv
 import itertools
 import shutil
-from tqdm import tqdm
 from statistics import mean, median, mode, stdev
 from colmap_python_utils.read_write_model import read_model, Image, qvec2rotmat, rotmat2qvec, read_images_binary
-from output_model_score_html import ScoresheetData, create_scoresheet
 from model_score_helpers import geodesic_error
-from model_visualization import create_transform, determine_image_pair_best_image, get_image_inverse_transform, render_image_pair
+
+
+def compute_model_orientation_error(extended_model_path, extended_images_root, reference_model_path):
+    # Load models.
+    print(f"Importing extended model...")
+    ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
+    with open(f"{extended_images_root}/images_new_names.json", 'r') as imgnamesfile:
+        ext_img_orig_names = json.load(imgnamesfile)
+    print(f"Done - {len(ext_images)} images  ,  {len(ext_points3D)} points")
+
+    print(f"Importing reference model...")
+    ref_cameras, ref_images, ref_points3D = read_model(reference_model_path, ext='.txt')
+    print(f"Done - {len(ref_images)} images  ,  {len(ref_points3D)} points")
+
+    # Build a mapping between extended model image ID to reference model image ID.
+    ext2ref_id_map = {}
+    for ext_img_id in ext_images:
+        ext_img_new_name = ext_images[ext_img_id].name
+        if ext_img_new_name in ext_img_orig_names:
+            ext_img_orig_name = ext_img_orig_names[ext_img_new_name]
+            for ref_img_id in ref_images:
+                ref_img_name = ref_images[ref_img_id].name.split('/')[-1] # WikiScenes3D image names have a 'full' relative path instead of just the image name.
+                if(ref_img_name == ext_img_orig_name):
+                    ext2ref_id_map[ext_img_id] = ref_img_id
+
+    print(f"\nModels have {len(ext2ref_id_map)} common images.")
+
+    if(len(ext2ref_id_map) == 0):
+        return -1, 0, []
+
+    print("\n Computing image orientation error")
+
+    # Go over pairs of images and calculate delta rotations
+
+    ## get all possible pairs of images
+    ext_img_id_pairs = list(itertools.combinations(ext2ref_id_map.keys(), 2))
+    # ref_img_id_pairs = list(itertools.combinations(ext2ref_id_map.values(), 2))
+
+    err_angles = [] # list of all orientation errors (one for each image pair)
+    err_angles_w_images = [] # list of tuples - (id0, id1, error)
+    image_errs = {} # mapping of <image id> -> <list of all relevant errors>. will be used to determine most and least accurate images.
+
+    for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
+        # extract qvecs
+        ext_img_0_qvec = ext_images[ext_img_id_0].qvec
+        ext_img_1_qvec = ext_images[ext_img_id_1].qvec
+        ref_img_id_0 = ext2ref_id_map[ext_img_id_0]
+        ref_img_id_1 = ext2ref_id_map[ext_img_id_1]
+        ref_img_0_qvec = ref_images[ref_img_id_0].qvec
+        ref_img_1_qvec = ref_images[ref_img_id_1].qvec
+
+        # Compute the rotation from image 0 to image 1, in extended model.
+        delta_R_ext = qvec2rotmat(ext_img_1_qvec) @ np.linalg.inv(qvec2rotmat(ext_img_0_qvec))
+        # Compute the angle between image 0 to image 1, in reference model. (not sure if needed)
+        delta_R_ref = qvec2rotmat(ref_img_1_qvec) @ np.linalg.inv(qvec2rotmat(ref_img_0_qvec))
+
+        # for image 0, compute the rotation from extension space to reference space.
+        R_ext_to_ref_0 = qvec2rotmat(ref_img_0_qvec) @ np.linalg.inv(qvec2rotmat(ext_img_0_qvec))
+        # Apply this rotation to the extension image 1 to obtain the hypothesized reference image 1 orientation.
+        ref_1_eval = delta_R_ext @ R_ext_to_ref_0 @ qvec2rotmat(ext_img_0_qvec)
+        # The error is the geodesic distance between this hypothesis and 'ground truth' (the actual reference image 1 orientation)
+        error = geodesic_error(qvec2rotmat(ref_img_1_qvec), ref_1_eval)
+
+        err_angles.append(error)
+        # err_angles_w_images.append((ext_images[ext_img_id_0].name, ext_images[ext_img_id_1].name, error))
+        err_angles_w_images.append((ext_img_id_0, ext_img_id_1, error))
+        if ext_images[ext_img_id_0].name not in image_errs:
+            image_errs[ext_images[ext_img_id_0].name] = []
+        image_errs[ext_images[ext_img_id_0].name].append(error)
+        if ext_images[ext_img_id_1].name not in image_errs:
+            image_errs[ext_images[ext_img_id_1].name] = []
+        image_errs[ext_images[ext_img_id_1].name].append(error)
+
+    image_errs_avg = {} # mapping of <image id> -> <median error value>
+    for k, v in image_errs.items():
+        image_errs_avg[k] = median(v)
+
+    ## sort images by median error -> most accurate images are at the top. 
+    image_errs_avg_sorted = dict(sorted(image_errs_avg.items(), key=lambda item: item[1]))
+
+    ## sort tuples by error -> most accurate image pair is at the top and least accurate pair is at the bottom.
+    image_pairs_sorted = sorted(err_angles_w_images, key=lambda item: item[2])
+
+    ## finally - the orientation score is simply the mean image orientation error (across all common images).
+    if len(image_errs_avg) == 0:
+        return -1, 0, []
+        
+    print(f"orientation score: {mean(image_errs_avg.values())}")
+
+    return mean(image_errs_avg.values()), len(ext2ref_id_map), image_pairs_sorted
+
 
 parser = argparse.ArgumentParser(description='')
 parser.add_argument('--category_index')
 parser.add_argument('--w3d_component_index')
-parser.add_argument('--extended_model_root')
+parser.add_argument('--extended_model_path')
+parser.add_argument('--extended_models_root')
 parser.add_argument('--user_view_adjust', nargs='?', default=False, const=True)
 args = parser.parse_args()
 
-# Load models.
-print(f"Importing extended model...")
-# extended_model_root = f"../Models/extended_vocabtree_00/cathedrals/{args.category_index}"
-extended_model_path = f"{args.extended_model_root}"
 extended_images_root = f"../Data/Wikiscenes_exterior_images/cathedrals/{args.category_index}"
-extended_images_path_absolute = os.path.abspath(f"{extended_images_root}/images_renamed")
-extended_model_root_absolute = os.path.abspath(args.extended_model_root)
-extended_model_output_root = f"{args.extended_model_root}/score"
-pair_visualizations_path = os.path.abspath(f"{extended_model_output_root}/image_pair_vis/")
-ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
-with open(f"{extended_images_root}/images_new_names.json", 'r') as imgnamesfile:
-    ext_img_orig_names = json.load(imgnamesfile)
-print(f"Done - {len(ext_images)} images  ,  {len(ext_points3D)} points")
-
-print(f"Importing reference model...")
 reference_model_path = f"../Data/WikiScenes3D/{args.category_index}/{args.w3d_component_index}"
-ref_cameras, ref_images, ref_points3D = read_model(reference_model_path, ext='.txt')
-print(f"Done - {len(ref_images)} images  ,  {len(ref_points3D)} points")
+
+if args.extended_models_root is not None:
+    extended_category_root = f"{args.extended_models_root}/{args.category_index}"
+    output_csv_path = f"{extended_category_root}/model_orientation_errors_{args.category_index}_{args.w3d_component_index}.csv"
+    with open(output_csv_path, 'w') as outfile:
+        csv_writer = csv.writer(outfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        for entry in os.scandir(extended_category_root):
+            if entry.is_dir() and entry.name.isnumeric():
+                print(f"Directory: {entry.name}")
+                extended_model_dir = f"{entry.path}/ext/sparse"
+                mean_orientation_err, num_common_images, image_pairs_sorted = compute_model_orientation_error(extended_model_dir, extended_images_root, reference_model_path)
+                csv_writer.writerow([int(entry.name), mean_orientation_err, num_common_images])
+
+# Comment this out to proceed to visualizations.
+exit()
+
+# elif args.extended_model_path is not None:
+#     compute_model_DREM_score(reference_model_path_base, args.extended_model_path, extended_images_root)
+
+# Visualize.
+from output_model_score_html import ScoresheetData, create_scoresheet
+from model_visualization import create_transform, determine_image_pair_best_image, get_image_inverse_transform, render_image_pair
+
+extended_model_output_root = f"{args.extended_model_path}/score"
+pair_visualizations_path = os.path.abspath(f"{extended_model_output_root}/image_pair_vis/")
+extended_images_path_absolute = os.path.abspath(f"{extended_images_root}/images_renamed")
 
 if os.path.exists(extended_model_output_root):
     shutil.rmtree(extended_model_output_root)
@@ -43,78 +143,6 @@ if not os.path.exists(extended_model_output_root):
     os.makedirs(extended_model_output_root)
     os.makedirs(pair_visualizations_path)
 
-# def analyze_orientation_errors()
-# Build a mapping between extended model image ID to reference model image ID.
-ext2ref_id_map = {}
-for ext_img_id in ext_images:
-    ext_img_new_name = ext_images[ext_img_id].name
-    if ext_img_new_name in ext_img_orig_names:
-        ext_img_orig_name = ext_img_orig_names[ext_img_new_name]
-        for ref_img_id in ref_images:
-            ref_img_name = ref_images[ref_img_id].name.split('/')[-1] # WikiScenes3D image names have a 'full' relative path instead of just the image name.
-            if(ref_img_name == ext_img_orig_name):
-                ext2ref_id_map[ext_img_id] = ref_img_id
-
-print(f"\nModels have {len(ext2ref_id_map)} common images.")
-
-if(len(ext2ref_id_map) == 0):
-    exit()
-
-print("\n Computing image orientation error")
-
-# Go over pairs of images and calculate delta rotations
-
-## get all possible pairs of images
-ext_img_id_pairs = list(itertools.combinations(ext2ref_id_map.keys(), 2))
-# ref_img_id_pairs = list(itertools.combinations(ext2ref_id_map.values(), 2))
-
-err_angles = [] # list of all orientation errors (one for each image pair)
-err_angles_w_images = [] # list of tuples - (id0, id1, error)
-image_errs = {} # mapping of <image id> -> <list of all relevant errors>. will be used to determine most and least accurate images.
-
-for ext_img_id_0, ext_img_id_1 in ext_img_id_pairs:
-    # extract qvecs
-    ext_img_0_qvec = ext_images[ext_img_id_0].qvec
-    ext_img_1_qvec = ext_images[ext_img_id_1].qvec
-    ref_img_id_0 = ext2ref_id_map[ext_img_id_0]
-    ref_img_id_1 = ext2ref_id_map[ext_img_id_1]
-    ref_img_0_qvec = ref_images[ref_img_id_0].qvec
-    ref_img_1_qvec = ref_images[ref_img_id_1].qvec
-
-    # Compute the rotation from image 0 to image 1, in extended model.
-    delta_R_ext = qvec2rotmat(ext_img_1_qvec) @ np.linalg.inv(qvec2rotmat(ext_img_0_qvec))
-    # Compute the angle between image 0 to image 1, in reference model. (not sure if needed)
-    delta_R_ref = qvec2rotmat(ref_img_1_qvec) @ np.linalg.inv(qvec2rotmat(ref_img_0_qvec))
-
-    # for image 0, compute the rotation from extension space to reference space.
-    R_ext_to_ref_0 = qvec2rotmat(ref_img_0_qvec) @ np.linalg.inv(qvec2rotmat(ext_img_0_qvec))
-    # Apply this rotation to the extension image 1 to obtain the hypothesized reference image 1 orientation.
-    ref_1_eval = delta_R_ext @ R_ext_to_ref_0 @ qvec2rotmat(ext_img_0_qvec)
-    # The error is the geodesic distance between this hypothesis and 'ground truth' (the actual reference image 1 orientation)
-    error = geodesic_error(qvec2rotmat(ref_img_1_qvec), ref_1_eval)
-
-    err_angles.append(error)
-    # err_angles_w_images.append((ext_images[ext_img_id_0].name, ext_images[ext_img_id_1].name, error))
-    err_angles_w_images.append((ext_img_id_0, ext_img_id_1, error))
-    if ext_images[ext_img_id_0].name not in image_errs:
-        image_errs[ext_images[ext_img_id_0].name] = []
-    image_errs[ext_images[ext_img_id_0].name].append(error)
-    if ext_images[ext_img_id_1].name not in image_errs:
-        image_errs[ext_images[ext_img_id_1].name] = []
-    image_errs[ext_images[ext_img_id_1].name].append(error)
-
-image_errs_avg = {} # mapping of <image id> -> <median error value>
-for k, v in image_errs.items():
-    image_errs_avg[k] = median(v)
-
-## sort images by median error -> most accurate images are at the top. 
-image_errs_avg_sorted = dict(sorted(image_errs_avg.items(), key=lambda item: item[1]))
-
-## sort tuples by error -> most accurate image pair is at the top and least accurate pair is at the bottom.
-image_pairs_sorted = sorted(err_angles_w_images, key=lambda item: item[2])
-
-## finally - the orientation score is simply the mean image orientation error (across all common images).
-print(f"orientation score: {mean(image_errs_avg.values())}")
 
 orientation_errors_out_path = f"{extended_model_output_root}/orientation_errors.txt"
 with open(orientation_errors_out_path, 'w') as f:
@@ -123,10 +151,6 @@ with open(orientation_errors_out_path, 'w') as f:
 
 print(f"wrote orientation errors to: {orientation_errors_out_path}")
 
-# exit()
-
-
-# Visualize.
 ## visualization consts
 uva=args.user_view_adjust
 
