@@ -94,7 +94,7 @@ def build_model(output_path, category_index, num_inliers, base_images_path, ext_
     ext_mapper_args = [colmap_path, "mapper",
                     "--database_path", ext_database_path,
                     "--image_path", ext_images_path,
-                    "--input_path", f"{base_sparse_dir}\\0"
+                    "--input_path", f"{base_sparse_dir}\\0",
                     "--output_path", ext_sparse_dir,
                     "--Mapper.min_num_matches", str(num_inliers),
                     "--Mapper.fix_existing_images", str(1),
