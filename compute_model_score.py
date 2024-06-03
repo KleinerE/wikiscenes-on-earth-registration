@@ -19,6 +19,10 @@ def compute_model_DREM_score(reference_model_path_base, extended_model_path, ext
     print("Done.")
 
     print(f"Importing extended model...")
+    if not os.path.exists(extended_model_path):
+        return -1, -1, -1, -1, -1
+    if len(os.listdir(extended_model_path)) == 0:
+        return -1, -1, -1, -1, -1
     ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
     with open(f"{extended_images_root}/images_new_names.json", 'r') as imgnamesfile:
         ext_img_orig_names = json.load(imgnamesfile)
@@ -96,7 +100,7 @@ if args.extended_model_path is not None:
 
 elif args.extended_models_root is not None:
     extended_category_root = f"{args.extended_models_root}/{args.category_index}"
-    output_csv_path = f"{extended_category_root}/model_drem_scores.csv"
+    output_csv_path = f"{extended_category_root}/model_drem_scores_{args.category_index}.csv"
     with open(output_csv_path, 'w') as outfile:
         csv_writer = csv.writer(outfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
         for entry in os.scandir(extended_category_root):
@@ -104,5 +108,6 @@ elif args.extended_models_root is not None:
                 print(f"Directory: {entry.name}")
                 extended_model_dir = f"{entry.path}/ext/sparse"
                 drem, size_factor, iou, gained_images, lost_images = compute_model_DREM_score(reference_model_path_base, extended_model_dir, extended_images_root)
-                csv_writer.writerow([int(entry.name), drem, size_factor, iou, gained_images, lost_images])
+                if size_factor >= 0:
+                    csv_writer.writerow([int(entry.name), drem, size_factor, iou, gained_images, lost_images])
 

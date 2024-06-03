@@ -23,6 +23,6 @@ if args.extended_models_root is not None:
         print(xs)
         print(ys)
         plt.plot(xs, ys)
-        plt.axis(min(xs), max(xs), min(ys), max(ys))
+        # plt.axis(min(xs), max(xs), min(ys), max(ys))
         plt.show()
         # csv_reader = csv.reader(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)

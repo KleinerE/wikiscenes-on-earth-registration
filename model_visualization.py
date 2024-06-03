@@ -1,7 +1,7 @@
 import numpy as np
-import open3d
+# import open3d
 from colmap_python_utils.read_write_model import Image, qvec2rotmat, rotmat2qvec
-from colmap_python_utils.visualize_model import draw_camera
+# from colmap_python_utils.visualize_model import draw_camera
 
 
 def create_transform(R, t):
