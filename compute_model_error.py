@@ -13,6 +13,10 @@ from model_score_helpers import geodesic_error
 def compute_model_orientation_error(extended_model_path, extended_images_root, reference_model_path):
     # Load models.
     print(f"Importing extended model...")
+    if not os.path.exists(extended_model_path):
+        return -1, 0, []
+    if len(os.listdir(extended_model_path)) == 0:
+        return -1, 0, []
     ext_cameras, ext_images, ext_points3D = read_model(extended_model_path, ext='.bin')
     with open(f"{extended_images_root}/images_new_names.json", 'r') as imgnamesfile:
         ext_img_orig_names = json.load(imgnamesfile)
@@ -94,7 +98,7 @@ def compute_model_orientation_error(extended_model_path, extended_images_root, r
     ## finally - the orientation score is simply the mean image orientation error (across all common images).
     if len(image_errs_avg) == 0:
         return -1, 0, []
-        
+
     print(f"orientation score: {mean(image_errs_avg.values())}")
 
     return mean(image_errs_avg.values()), len(ext2ref_id_map), image_pairs_sorted
@@ -121,7 +125,8 @@ if args.extended_models_root is not None:
                 print(f"Directory: {entry.name}")
                 extended_model_dir = f"{entry.path}/ext/sparse"
                 mean_orientation_err, num_common_images, image_pairs_sorted = compute_model_orientation_error(extended_model_dir, extended_images_root, reference_model_path)
-                csv_writer.writerow([int(entry.name), mean_orientation_err, num_common_images])
+                if mean_orientation_err >= 0:
+                    csv_writer.writerow([int(entry.name), mean_orientation_err, num_common_images])
 
 # Comment this out to proceed to visualizations.
 exit()
