@@ -4,21 +4,13 @@ import argparse
 import re
 import shutil
 
-# parser = argparse.ArgumentParser(description='Runs recursively on a wikiscenes category (cathedral) and copies all photos of the exterior to a separate folder.')
-# parser.add_argument('category_index')
-# args = parser.parse_args()
-
-def extract_for_category(category_index):
-
-    base_dir = f"..\Data\Wikiscenes1200px\cathedrals\{category_index}"
-    output_dir = f"..\Data\Wikiscenes_exterior_images\cathedrals\{category_index}\images"
-
+def extract_for_category(input_dir, output_dir):
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     # Read the base json file and find the subcategoryies that contain 'exterior'.
-    with open(f"{base_dir}\category.json", encoding="utf-8") as jsonfile:
+    with open(f"{input_dir}\category.json", encoding="utf-8") as jsonfile:
         parsed_json = json.load(jsonfile)
 
     subcategories = parsed_json['pairs']
@@ -64,7 +56,7 @@ def extract_for_category(category_index):
     collected = 0
     skipped = []
     for subcat in subcategories_exterior:
-        collected, skipped = extract_recursive(f"{base_dir}\{subcategories[subcat]}", output_dir, collected, skipped)
+        collected, skipped = extract_recursive(f"{input_dir}\{subcategories[subcat]}", output_dir, collected, skipped)
 
     print(f"\nCollected {collected} images.")
     if(len(skipped) > 0):
@@ -75,21 +67,36 @@ def extract_for_category(category_index):
     if collected == 0:
         cat_dir = os.path.dirname(output_dir)
         os.rmdir(output_dir)
-        os.rmdir(cat_dir)
+        # os.rmdir(cat_dir)
 
     return collected, skipped
 
-wikiscenes_base_path = "..\Data\Wikiscenes1200px\cathedrals"
 
-extract_stats = {}
-for entry in os.scandir(wikiscenes_base_path):
-    if entry.is_dir():
-        category_num = int(entry.name)
-        print(f"Category: {category_num}")
-        collected, skipped = extract_for_category(category_num)
-        extract_stats[category_num] = (collected, len(skipped))    
+if __name__ == "__main__":
 
-stats_out_path = "..\Data\Wikiscenes_exterior_images\cathedrals\collect_stats.json"
-with open(stats_out_path, "w") as outfile:
-    json.dump(extract_stats, outfile, indent=4)
-    print(f"Stats saved to: {stats_out_path}")
+    parser = argparse.ArgumentParser(description='Runs recursively on an entire WikiScenes dataset, or a single wikiscenes category, and copies all photos of the exterior to a separate folder.')
+    parser.add_argument("--input_dir", type=str, required=True, help="path to WikiScenes base dir, or to a single WikiScenes category dir if --single_category is specified.")
+    parser.add_argument("--output_dir", type=str, required=True, help="path to output dir.")
+    parser.add_argument("--single_category", action='store_true', help="is this flag is specified, the input dir is treated as a single category.")
+    args = parser.parse_args()
+
+    extract_stats = {}
+    if args.single_category:
+        collected, skipped = extract_for_category(args.input_dir, args.output_dir)
+        print(f"Collected: {collected}, skipped: {len(skipped)}")
+
+    else:
+        if not os.path.exists(args.output_dir):
+            os.makedirs(args.output_dir)
+ 
+        for entry in os.scandir(args.input_dir):
+            if entry.is_dir():
+                category_num = int(entry.name)
+                print(f"Category: {category_num}")
+                collected, skipped = extract_for_category(f"{args.input_dir}\{category_num}", f"{args.output_dir}\{category_num}")
+                extract_stats[category_num] = (collected, len(skipped))    
+
+        stats_out_path = f"{args.output_dir}\collect_stats.json"
+        with open(stats_out_path, "w") as outfile:
+            json.dump(extract_stats, outfile, indent=4)
+            print(f"Stats saved to: {stats_out_path}")
